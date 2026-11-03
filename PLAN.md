@@ -62,7 +62,7 @@ is not a removal.
       verified on a real PR: fails on breaking changes, edits one comment in place, passes once fixed
 - [x] Self-contained CI job (`action` in ci.yml) asserting the action's outputs, so it runs without a PR
 - [x] Multiple specs per repo (`spec:` takes several paths or globs); one comment per spec, SARIF merged into one run
-- [ ] Tag `v0` so `uses: wylan24/contractwatch@v0` works
+- [x] Tag `v0` (and `v0.1.0-alpha.0`) so `uses: wylan24/contractwatch@v0` works; CI checks the published tag
 
 ### M3: accepting breaks on purpose
 - [x] `.contractwatch.json`: per-rule severity overrides (or `off`), ignored operation patterns

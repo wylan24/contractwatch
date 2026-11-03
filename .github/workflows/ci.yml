@@ -42,6 +42,13 @@ jobs:
           spec: examples/petstore.yaml
           base: HEAD
 
+      - name: Published tag, as users reference it (expected to pass)
+        id: published
+        uses: wylan24/contractwatch@v0
+        with:
+          spec: examples/petstore.yaml
+          base: HEAD
+
       - name: Break the example spec and add a new one
         run: |
           cp test/fixtures/petstore-head.yaml examples/petstore.yaml
@@ -79,6 +86,7 @@ jobs:
       - name: Assert outcomes
         env:
           UNCHANGED: ${{ steps.unchanged.outputs.exit-code }}/${{ steps.unchanged.outputs.breaking }}
+          PUBLISHED: ${{ steps.published.outputs.exit-code }}/${{ steps.published.outputs.breaking }}
           REPORT: ${{ steps.report.outputs.exit-code }}/${{ steps.report.outputs.breaking }}
           FAIL: ${{ steps.fail.outcome }}/${{ steps.fail.outputs.exit-code }}/${{ steps.fail.outputs.breaking }}
           ACCEPTED: ${{ steps.accepted.outputs.exit-code }}/${{ steps.accepted.outputs.breaking }}
@@ -86,6 +94,7 @@ jobs:
         run: |
           echo "unchanged=$UNCHANGED report=$REPORT fail=$FAIL accepted=$ACCEPTED"
           test "$UNCHANGED" = 0/0
+          test "$PUBLISHED" = 0/0
           test "$REPORT" = 0/21
           test "$FAIL" = failure/1/21
           test "$ACCEPTED" = 0/0
