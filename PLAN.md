@@ -60,13 +60,16 @@ is not a removal.
       (updated in place, not re-posted), SARIF upload, outputs (`breaking`, `exit-code`)
 - [x] Dogfood workflow (`.github/workflows/contract.yml`) runs the action on `examples/petstore.yaml` in PRs;
       verified on a real PR: fails on breaking changes, edits one comment in place, passes once fixed
-- [ ] Self-contained CI job asserting the action's outputs (like dephealth's `action` job), so it runs without a PR
-- [ ] Multiple specs per repo (`specs: api/*.yaml`)
+- [x] Self-contained CI job (`action` in ci.yml) asserting the action's outputs, so it runs without a PR
+- [x] Multiple specs per repo (`spec:` takes several paths or globs); one comment per spec, SARIF merged into one run
+- [ ] Tag `v0` so `uses: wylan24/contractwatch@v0` works
 
 ### M3: accepting breaks on purpose
-- [ ] `.contractwatch.json`: per-rule severity overrides, ignored paths, `x-` extensions to skip
-- [ ] Accepted-break list keyed by change fingerprint, with a reason and an expiry
-- [ ] "Breaking change requires a major version bump" policy (`info.version` semver check)
+- [x] `.contractwatch.json`: per-rule severity overrides (or `off`), ignored operation patterns
+- [x] Accepted-break list keyed by short change id, with a reason and an expiry; stale/expired entries are reported
+- [x] `allowBreakingOnMajorBump`: breaking changes pass on a new major `info.version`
+- [ ] JSON Schema for `.contractwatch.json` (editor completion)
+- [ ] `contractwatch accept <id> --reason …` to add entries without hand-editing
 - [ ] `/contractwatch accept` PR comment command (later)
 
 ### M4: spec vs. reality (drift)

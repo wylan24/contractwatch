@@ -45,6 +45,41 @@ Exit codes: `0` nothing failing, `1` failing changes found, `2` contractwatch co
 | `--markdown <file>` / `--json <file>` / `--sarif <file>` | Also write these reports. |
 | `--fail-on breaking\|warning\|never` | When to exit 1. Default `breaking`. |
 | `--all` | List non-breaking changes too. |
+| `--config <file>` / `--no-config` | Use another config file, or none. By default the nearest `.contractwatch.json` is used. |
+
+## Breaking an API on purpose
+
+Sometimes a break is the plan: an endpoint is retired, a field is renamed in a new version. Every change in the
+report has a short id (`[operation-removed 3fa2c1d0]` in the terminal, the **Id** column in the PR comment).
+Record the ones you mean in `.contractwatch.json` at the repository root:
+
+```json
+{
+  "accept": [
+    { "id": "3fa2c1d0", "reason": "DELETE /pets moved to /v2, clients notified", "expires": "2027-01-31" }
+  ]
+}
+```
+
+Accepted changes are still listed, with their reason, but don't fail the check. An acceptance stops applying after
+its `expires` date, and contractwatch tells you when an entry no longer matches anything so it can be removed.
+The file lives in the repository, so accepting a break goes through code review like any other change.
+
+Other settings:
+
+```json
+{
+  "rules": { "enum-value-added": "info", "format-changed": "off" },
+  "ignore": ["/internal/**", "DELETE /admin/*"],
+  "allowBreakingOnMajorBump": true
+}
+```
+
+- `rules`: change a rule's severity (`breaking`, `warning`, `info`) or turn it `off`. Rule ids are listed under [Rules](#rules).
+- `ignore`: skip operations. `*` matches one path segment, `**` any number; a method prefix is optional.
+  Parameter names don't matter (`/pets/{id}` matches `/pets/{petId}`).
+- `allowBreakingOnMajorBump`: breaking changes pass when `info.version` gets a new major version
+  (or a new minor version in `0.x`), the semver way of saying "this release breaks things".
 
 ## Direction matters
 
@@ -80,6 +115,29 @@ jobs:
 The report goes to the job summary. On pull requests with breaking changes or warnings it also posts a comment,
 and edits that same comment on later pushes instead of adding new ones. Set `upload-sarif: 'true'` (with
 `security-events: write`) to show changes as code-scanning alerts on the spec's lines.
+
+Several specs? List them, one per line, or use a glob. Each gets its own comment:
+
+```yaml
+        with:
+          spec: |
+            services/billing/openapi.yaml
+            services/*/api/**/*.yaml
+```
+
+| Input | Default | |
+| --- | --- | --- |
+| `spec` | (required) | Spec paths or globs, one per line or space-separated. |
+| `base` | PR base branch | Git ref to compare against. On `push`, the previous commit. |
+| `fail-on` | `breaking` | `breaking`, `warning` or `never`. |
+| `comment` | `true` | Post and update the PR comment. |
+| `upload-sarif` | `false` | Upload to code scanning. |
+
+Outputs: `exit-code` (0/1/2), `breaking` (count across specs, not counting accepted ones) and `report-dir`
+(one folder per spec with `report.json`, `report.md` and `report.sarif`).
+
+> While the repository is private, other repositories can only use the Action after you allow it under
+> **Settings → Actions → General → Access**.
 
 ## Rules
 
