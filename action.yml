@@ -81,10 +81,10 @@ runs:
         SPECS: ${{ inputs.spec }}
         BASE: ${{ steps.base.outputs.ref }}
         FAIL_ON: ${{ inputs.fail-on }}
-        OUT: ${{ runner.temp }}/contractwatch
       run: |
         shopt -s globstar nullglob
-        rm -rf "$OUT" && mkdir -p "$OUT"
+        # a folder per run, so several uses of the action in one job keep their own reports
+        OUT=$(mktemp -d "$RUNNER_TEMP/contractwatch-XXXXXX")
         specs=()
         while IFS= read -r line; do
           for pattern in $line; do
