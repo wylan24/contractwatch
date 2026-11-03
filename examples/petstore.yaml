@@ -1,24 +1,28 @@
 openapi: 3.0.3
 info:
   title: Petstore
-  version: 1.0.0
+  version: 1.1.0
+security:
+  - apiKey: []
 paths:
   /pets:
     get:
       operationId: listPets
+      security: []
       parameters:
         - name: limit
           in: query
           schema:
             type: integer
-            maximum: 100
+            maximum: 50
+        - name: species
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: A list of pets
-          headers:
-            X-Next:
-              schema:
-                type: string
           content:
             application/json:
               schema:
@@ -28,6 +32,7 @@ paths:
     post:
       operationId: createPet
       requestBody:
+        required: true
         content:
           application/json:
             schema:
@@ -39,10 +44,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Pet'
-  /pets/{id}:
+  /pets/{petId}:
     get:
+      deprecated: true
       parameters:
-        - name: id
+        - name: petId
           in: path
           required: true
           schema:
@@ -54,35 +60,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Pet'
-        '404':
-          description: Not found
-    delete:
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+  /owners:
+    get:
       responses:
-        '204':
-          description: Deleted
+        '200':
+          description: Owners
 components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
   schemas:
     Pet:
       type: object
-      required: [id, name, status]
+      required: [id, name]
       properties:
         id:
-          type: integer
+          type: number
         name:
-          type: string
-        tag:
           type: string
         status:
           type: string
-          enum: [available, sold]
+          nullable: true
+          enum: [available, sold, pending]
         owner:
           $ref: '#/components/schemas/Owner'
+        birthday:
+          type: string
+          format: date
     Owner:
       type: object
       properties:
@@ -94,13 +100,15 @@ components:
             $ref: '#/components/schemas/Pet'
     NewPet:
       type: object
-      required: [name]
+      required: [name, species]
       properties:
         name:
           type: string
-          maxLength: 100
+          maxLength: 50
         tag:
           type: string
         kind:
           type: string
-          enum: [dog, cat, bird]
+          enum: [dog, cat]
+        species:
+          type: string
