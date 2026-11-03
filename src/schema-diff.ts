@@ -1,5 +1,5 @@
 import { type RuleId, severityOf } from './rules.ts';
-import type { Change, Direction, Schema } from './types.ts';
+import type { Direction, RawChange, Schema } from './types.ts';
 
 /**
  * Direction-aware schema comparison. For a request, the head schema must still accept everything the
@@ -12,7 +12,7 @@ export interface SchemaContext {
   direction: Direction;
   /** Prefix for `where`, e.g. `response 200 body`. */
   label: string;
-  out: Change[];
+  out: RawChange[];
 }
 
 export function diffSchema(base: Schema | undefined, head: Schema | undefined, pointer: string[], ctx: SchemaContext): void {

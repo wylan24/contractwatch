@@ -10,6 +10,8 @@ export const SEVERITIES: Severity[] = ['breaking', 'warning', 'info'];
 export type Direction = 'request' | 'response';
 
 export interface Change {
+  /** Short stable id for this change, used to accept it in `.contractwatch.json`. */
+  id: string;
   /** Rule id from `rules.ts`, e.g. `property-removed`. */
   rule: string;
   severity: Severity;
@@ -24,7 +26,12 @@ export interface Change {
    * points at where the thing was; `locate` falls back to the deepest part that still exists.
    */
   pointer: string[];
+  /** Why this change doesn't fail the check, when it was accepted (by id or by a major version bump). */
+  accepted?: string;
 }
+
+/** A change before its id is assigned. */
+export type RawChange = Omit<Change, 'id' | 'accepted'>;
 
 export interface Spec {
   /** Path shown to users, relative to the working directory. */
@@ -44,4 +51,6 @@ export interface DiffResult {
   base: Pick<Spec, 'file' | 'source' | 'title' | 'version' | 'openapi'>;
   head: Pick<Spec, 'file' | 'source' | 'title' | 'version' | 'openapi'>;
   changes: Change[];
+  /** Messages about the configuration, e.g. an acceptance that expired. */
+  notes: string[];
 }

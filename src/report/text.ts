@@ -30,14 +30,28 @@ export function renderText(result: DiffResult, opts: TextOptions): string {
       lines.push(`  ${bold(op || 'Document')}`);
       for (const ch of changes) {
         const where = ch.where ? dim(`${ch.where.replace(/`/g, '')} · `) : '';
-        lines.push(`    ${COLOR[sev](ICON[sev])} ${where}${ch.message.replace(/`/g, '')} ${dim(`[${ch.rule}]`)}`);
+        lines.push(`    ${COLOR[sev](ICON[sev])} ${where}${ch.message.replace(/`/g, '')} ${dim(`[${ch.rule} ${ch.id}]`)}`);
       }
     }
     lines.push('');
   }
 
+  if (c.accepted) {
+    lines.push(bold(`Accepted (${c.accepted})`));
+    for (const [op, changes] of groupByOperation(result.changes, 'accepted')) {
+      lines.push(`  ${bold(op || 'Document')}`);
+      for (const ch of changes) lines.push(dim(`    ✔ ${ch.message.replace(/`/g, '')} [${ch.rule} ${ch.id}]: ${ch.accepted}`));
+    }
+    lines.push('');
+  }
+  for (const note of result.notes) lines.push(COLOR.warning(`note: ${note}`));
+  if (result.notes.length) lines.push('');
+
   if (!result.changes.length) lines.push('No changes to the API contract.');
   else if (!c.breaking) lines.push(COLOR.info(`No breaking changes.`) + (c.warning ? ` ${plural(c.warning, 'warning')} to review.` : ''));
-  else lines.push(COLOR.breaking(bold(`${plural(c.breaking, 'breaking change')} will break existing clients.`)));
+  else {
+    lines.push(COLOR.breaking(bold(`${plural(c.breaking, 'breaking change')} will break existing clients.`)));
+    lines.push(dim(`If a break is intended, add its id to "accept" in .contractwatch.json with a reason.`));
+  }
   return lines.join('\n') + '\n';
 }

@@ -6,7 +6,7 @@ export const COMMENT_MARKER = '<!-- contractwatch -->';
 
 const ICON: Record<Severity, string> = { breaking: '🔴', warning: '🟡', info: '🟢' };
 
-/** Markdown for a PR comment or job summary. Breaking and warnings are listed; non-breaking changes are folded. */
+/** Markdown for a PR comment or job summary. Breaking changes are listed; everything else is folded. */
 export function renderMarkdown(result: DiffResult): string {
   const c = counts(result);
   const out: string[] = [COMMENT_MARKER];
@@ -18,24 +18,35 @@ export function renderMarkdown(result: DiffResult): string {
 
   const noun: Record<Severity, string> = { breaking: 'breaking', warning: 'warning', info: 'non-breaking' };
   const tally = (['breaking', 'warning', 'info'] as const).filter((s) => c[s]).map((s) => `${ICON[s]} ${s === 'warning' ? plural(c[s], 'warning') : `${c[s]} ${noun[s]}`}`);
+  if (c.accepted) tally.push(`✔️ ${c.accepted} accepted`);
   if (tally.length) out.push('', tally.join(' · '));
 
   for (const sev of ['breaking', 'warning', 'info'] as const) {
     if (!c[sev]) continue;
     const table = section(result.changes, sev);
-    if (sev === 'breaking') out.push('', `#### ${SEVERITY_LABEL[sev]}`, '', table);
-    else out.push('', `<details><summary>${ICON[sev]} ${plural(c[sev], sev === 'warning' ? 'warning' : 'non-breaking change')}</summary>`, '', table, '', '</details>');
+    if (sev === 'breaking') {
+      out.push('', `#### ${SEVERITY_LABEL[sev]}`, '', table);
+      out.push('', '<sub>Breaking on purpose? Add the change id to `accept` in `.contractwatch.json`, with a reason.</sub>');
+    } else {
+      out.push('', `<details><summary>${ICON[sev]} ${plural(c[sev], sev === 'warning' ? 'warning' : 'non-breaking change')}</summary>`, '', table, '', '</details>');
+    }
   }
+  if (c.accepted) out.push('', `<details><summary>✔️ ${plural(c.accepted, 'accepted change')}</summary>`, '', section(result.changes, 'accepted'), '', '</details>');
+  for (const note of result.notes) out.push('', `> [!NOTE]\n> ${note}`);
 
   const side = (s: DiffResult['base']) => `\`${s.file}\`${s.source === 'working tree' ? '' : ` at \`${s.source}\``}${s.version ? ` (v${s.version})` : ''}`;
   out.push('', `<sub>Compared ${side(result.base)} with ${side(result.head)} · contractwatch</sub>`);
   return out.join('\n') + '\n';
 }
 
-function section(changes: Change[], sev: Severity): string {
-  const rows = ['| Operation | Where | Change |', '| --- | --- | --- |'];
+function section(changes: Change[], sev: Severity | 'accepted'): string {
+  const accepted = sev === 'accepted';
+  const rows = [`| Operation | Where | Change | ${accepted ? 'Reason' : 'Id'} |`, '| --- | --- | --- | --- |'];
   for (const [op, list] of groupByOperation(changes, sev)) {
-    for (const ch of list) rows.push(`| ${op ? `\`${op}\`` : 'Document'} | ${cell(ch.where ?? '')} | ${cell(ch.message)} <sub>\`${ch.rule}\`</sub> |`);
+    for (const ch of list) {
+      const last = accepted ? cell(ch.accepted ?? '') : `\`${ch.id}\``;
+      rows.push(`| ${op ? `\`${op}\`` : 'Document'} | ${cell(ch.where ?? '')} | ${cell(ch.message)} <sub>\`${ch.rule}\`</sub> | ${last} |`);
+    }
   }
   return rows.join('\n');
 }

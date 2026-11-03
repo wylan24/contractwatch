@@ -1,6 +1,7 @@
 import { type RuleId, severityOf } from './rules.ts';
 import { diffSchema } from './schema-diff.ts';
-import type { Change, DiffResult, Direction, Schema, Spec } from './types.ts';
+import { createHash } from 'node:crypto';
+import type { Change, DiffResult, Direction, RawChange, Schema, Spec } from './types.ts';
 
 const METHODS = ['get', 'put', 'post', 'delete', 'patch', 'options', 'head', 'trace'] as const;
 
@@ -14,7 +15,7 @@ interface Operation {
 
 /** Compare two loaded specs. Changes come back ordered: document-level first, then by operation. */
 export function diffSpecs(base: Spec, head: Spec): DiffResult {
-  const out: Change[] = [];
+  const out: RawChange[] = [];
   const pick = (s: Spec) => ({ file: s.file, source: s.source, title: s.title, version: s.version, openapi: s.openapi });
 
   if (base.openapi.slice(0, 3) !== head.openapi.slice(0, 3)) {
@@ -38,10 +39,18 @@ export function diffSpecs(base: Spec, head: Spec): DiffResult {
     out.push(change('operation-added', `${label} was added`, ['paths', ho.path, ho.method.toLowerCase()], label));
   }
 
-  return { base: pick(base), head: pick(head), changes: out };
+  return { base: pick(base), head: pick(head), changes: out.map((c) => ({ id: changeId(c), ...c })), notes: [] };
 }
 
-function change(rule: RuleId, message: string, pointer: string[], operation?: string, direction?: Direction, where?: string): Change {
+/**
+ * Hash of what changed and where, without line numbers or the spec's file name, so an id stays the same
+ * across unrelated edits and branches. Eight hex characters are plenty within one spec.
+ */
+export function changeId(c: RawChange): string {
+  return createHash('sha256').update([c.rule, c.operation ?? '', c.where ?? '', c.message].join('\0')).digest('hex').slice(0, 8);
+}
+
+function change(rule: RuleId, message: string, pointer: string[], operation?: string, direction?: Direction, where?: string): RawChange {
   return { rule, severity: severityOf(rule, direction), operation, direction, where, message, pointer };
 }
 
@@ -58,7 +67,7 @@ function indexOperations(doc: any): Map<string, Operation> {
   return out;
 }
 
-function diffOperation(baseDoc: any, headDoc: any, bo: Operation, ho: Operation, label: string, out: Change[]) {
+function diffOperation(baseDoc: any, headDoc: any, bo: Operation, ho: Operation, label: string, out: RawChange[]) {
   const at = ['paths', ho.path, ho.method.toLowerCase()];
   const push = (rule: RuleId, message: string, pointer: string[] = at, direction?: Direction, where?: string) =>
     out.push(change(rule, message, pointer, label, direction, where));
@@ -123,7 +132,7 @@ function parametersOf(o: Operation): Map<string, Param> {
   return byKey;
 }
 
-function diffParameters(bo: Operation, ho: Operation, label: string, at: string[], out: Change[]) {
+function diffParameters(bo: Operation, ho: Operation, label: string, at: string[], out: RawChange[]) {
   const bp = parametersOf(bo);
   const hp = parametersOf(ho);
   const ptr = (p: Param) => (p.pathLevel ? ['paths', ho.path, 'parameters', String(p.index)] : [...at, 'parameters', String(p.index)]);
@@ -156,7 +165,7 @@ function contentOf(container: any): Map<string, { type: string; schema?: Schema 
   return out;
 }
 
-function diffRequestBody(b: any, h: any, label: string, at: string[], out: Change[]) {
+function diffRequestBody(b: any, h: any, label: string, at: string[], out: RawChange[]) {
   const ptr = [...at, 'requestBody'];
   const push = (rule: RuleId, message: string, pointer = ptr) => out.push(change(rule, message, pointer, label, 'request', 'request body'));
   if (!b && !h) return;
@@ -179,7 +188,7 @@ function diffRequestBody(b: any, h: any, label: string, at: string[], out: Chang
   }
 }
 
-function diffResponses(b: Record<string, any>, h: Record<string, any>, label: string, at: string[], out: Change[]) {
+function diffResponses(b: Record<string, any>, h: Record<string, any>, label: string, at: string[], out: RawChange[]) {
   const ptr = [...at, 'responses'];
   const push = (rule: RuleId, message: string, pointer: string[], where: string) => out.push(change(rule, message, pointer, label, 'response', where));
   const success = (code: string) => /^[23]/.test(code);

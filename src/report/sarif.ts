@@ -21,7 +21,8 @@ export function renderSarif(result: DiffResult, headText: string, version: strin
       message: { text: text(ch) },
       locations: [{ physicalLocation: { artifactLocation: { uri: result.head.file }, region: { startLine: locator.line(ch.pointer) } } }],
       partialFingerprints: { contractwatch: fingerprint(ch) },
-      properties: { severity: ch.severity, operation: ch.operation, direction: ch.direction },
+      ...(ch.accepted ? { suppressions: [{ kind: 'external', justification: ch.accepted }] } : {}),
+      properties: { id: ch.id, severity: ch.severity, operation: ch.operation, direction: ch.direction },
     };
   });
 

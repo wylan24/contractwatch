@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { parseArgs } from 'node:util';
+import { applyConfig, ConfigError, findConfig, loadConfig } from './config.ts';
 import { diffSpecs } from './diff.ts';
 import { loadSpec, loadSpecAtRef, NotAtRefError, SpecLoadError } from './load.ts';
 import { renderMarkdown } from './report/markdown.ts';
@@ -24,6 +26,8 @@ Options
   --json <file>       also write a JSON report
   --sarif <file>      also write SARIF for GitHub code scanning
   --fail-on <level>   exit 1 on: breaking (default), warning, never
+  --config <file>     settings and accepted changes (default: nearest .contractwatch.json)
+  --no-config         ignore .contractwatch.json
   --all               list non-breaking changes too (text format)
   --no-color          plain output (also when NO_COLOR is set)
   -v, --version
@@ -43,6 +47,8 @@ async function main(argv: string[]): Promise<number> {
       json: { type: 'string' },
       sarif: { type: 'string' },
       'fail-on': { type: 'string', default: 'breaking' },
+      config: { type: 'string' },
+      'no-config': { type: 'boolean', default: false },
       all: { type: 'boolean', default: false },
       'no-color': { type: 'boolean', default: false },
       version: { type: 'boolean', short: 'v' },
@@ -76,7 +82,9 @@ async function main(argv: string[]): Promise<number> {
     [base, head] = await Promise.all([loadSpec(files[0]), loadSpec(files[1])]);
   }
 
-  const result = diffSpecs(base, head);
+  let result = diffSpecs(base, head);
+  const configFile = values['no-config'] ? undefined : (values.config ?? findConfig(process.cwd()) ?? findConfig(path.dirname(path.resolve(files.at(-1)!))));
+  if (configFile) result = applyConfig(result, loadConfig(configFile));
   const color = !values['no-color'] && !process.env.NO_COLOR && process.stdout.isTTY === true;
   const json = () => JSON.stringify({ ...result, summary: counts(result) }, null, 2) + '\n';
   const stdout = values.format === 'json' ? json() : values.format === 'markdown' ? renderMarkdown(result) : renderText(result, { color, all: values.all });
@@ -102,7 +110,7 @@ function usage(message: string): number {
 main(process.argv.slice(2)).then(
   (code) => (process.exitCode = code),
   (err) => {
-    if (err instanceof SpecLoadError || (err as { code?: string }).code?.startsWith('ERR_PARSE_ARGS')) console.error(`contractwatch: ${(err as Error).message}`);
+    if (err instanceof SpecLoadError || err instanceof ConfigError || (err as { code?: string }).code?.startsWith('ERR_PARSE_ARGS')) console.error(`contractwatch: ${(err as Error).message}`);
     else console.error(err);
     process.exitCode = 2;
   },
