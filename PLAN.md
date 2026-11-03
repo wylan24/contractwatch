@@ -58,7 +58,9 @@ is not a removal.
 ### M2: GitHub Action
 - [x] Composite `action.yml`: diff the PR's spec against the base branch, job summary, sticky PR comment
       (updated in place, not re-posted), SARIF upload, outputs (`breaking`, `exit-code`)
-- [ ] CI workflow that exercises the action on fixture specs (like dephealth's `action` job)
+- [x] Dogfood workflow (`.github/workflows/contract.yml`) runs the action on `examples/petstore.yaml` in PRs;
+      verified on a real PR: fails on breaking changes, edits one comment in place, passes once fixed
+- [ ] Self-contained CI job asserting the action's outputs (like dephealth's `action` job), so it runs without a PR
 - [ ] Multiple specs per repo (`specs: api/*.yaml`)
 
 ### M3: accepting breaks on purpose
