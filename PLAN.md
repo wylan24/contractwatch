@@ -44,12 +44,14 @@ is not a removal.
 
 ## Milestones
 
-### M1: spec diff CLI (this commit)
+### M1: spec diff CLI
 - [x] Load OpenAPI 3.0/3.1 (YAML/JSON, multi-file `$ref`s); reject Swagger 2 with a clear message
 - [x] Load the base spec from a git ref (`--base origin/main`), including relative `$ref` files at that ref
 - [x] Direction-aware schema diff: properties, required, types, nullable, enums, formats, limits,
       arrays, `additionalProperties`, `allOf` merging, `oneOf`/`anyOf` variants, cycles
 - [x] Operation diff: operations, parameters, request bodies, responses, media types, deprecation
+- [x] Also: security requirements, `servers` base paths, parameter `style`/`explode`, codes folded into a
+      `4XX`/`default` response, discriminators, callbacks and 3.1 webhooks (directions swapped)
 - [x] Severity per rule: `breaking` / `warning` / `info`; `--fail-on` threshold; exit codes 0/1/2
 - [x] Reporters: text (terminal), Markdown (PR comment / job summary), JSON, SARIF 2.1.0 with
       line numbers in the head spec and stable fingerprints
@@ -68,19 +70,23 @@ is not a removal.
 - [x] `.contractwatch.json`: per-rule severity overrides (or `off`), ignored operation patterns
 - [x] Accepted-break list keyed by short change id, with a reason and an expiry; stale/expired entries are reported
 - [x] `allowBreakingOnMajorBump`: breaking changes pass on a new major `info.version`
-- [ ] JSON Schema for `.contractwatch.json` (editor completion)
-- [ ] `contractwatch accept <id> --reason …` to add entries without hand-editing
-- [ ] `/contractwatch accept` PR comment command (later)
+- [x] JSON Schema for `.contractwatch.json` (`schema/`, generated from the rule list, checked by tests)
+- [x] `contractwatch accept <id>... --reason … [--expires …]` to add entries without hand-editing
+- [ ] `/contractwatch accept` PR comment command (needs a hosted bot or a workflow on `issue_comment`)
 
 ### M3.5: less noise
 - [x] Changes inside a shared `components.schemas` entry are reported once (`Pet.tag was removed`, used by N
       operations), count once, share one id, and give one SARIF alert
-- [ ] Same for schemas shared through external `$ref` files (they have no component name today)
+- [x] Same for schemas shared through external `$ref` files (named after the file, or their key in it)
+- [x] SARIF alerts follow `$ref`s into other files and point at the line there
 
 ### M4: spec vs. reality (drift)
-- [ ] `contractwatch verify spec.yaml --har traffic.har` / `--samples dir/`: validate real responses
-      against the spec; report undocumented fields, type mismatches, undocumented status codes
-- [ ] Reuse mockgen's schema inference to propose the spec patch that would match reality
+- [x] `contractwatch verify spec.yaml --har traffic.har`: validate real responses against the spec; report
+      mismatches (errors), undocumented fields, status codes, media types and operations (drift), and coverage
+- [x] Propose a schema for undocumented fields from the value types seen
+- [ ] Validate request bodies in the traffic too (what clients actually send)
+- [ ] Full schema proposals using mockgen's inference (formats, enums, optional vs. required)
+- [ ] `verify` in the GitHub Action (`har:` input)
 - [ ] `contractwatch verify --url https://staging.example.com`: replay safe GET operations
 
 ### M5: product path
