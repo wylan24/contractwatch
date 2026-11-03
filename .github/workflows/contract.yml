@@ -1,0 +1,18 @@
+# Dogfood: run the Action from this checkout on the example spec, as a user's workflow would.
+name: api-contract
+on:
+  pull_request:
+    paths: [examples/**, action.yml, src/**]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./
+        with:
+          spec: examples/petstore.yaml

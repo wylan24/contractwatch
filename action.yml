@@ -98,7 +98,7 @@ runs:
         echo "dir=$OUT" >> "$GITHUB_OUTPUT"
 
     - name: Comment on the pull request
-      if: ${{ inputs.comment == 'true' && github.event.pull_request && steps.run.outputs.exit-code != '2' && hashFiles(format('{0}/report.md', steps.run.outputs.dir)) != '' }}
+      if: ${{ inputs.comment == 'true' && github.event.pull_request && steps.run.outputs.exit-code != '2' }}
       # pull requests from forks get a read-only token; the job summary still has the report
       continue-on-error: true
       shell: bash
@@ -109,7 +109,7 @@ runs:
         SPEC: ${{ inputs.spec }}
       run: |
         # one comment per spec, found by its hidden marker and edited in place
-        marker="<!-- contractwatch -->"
+        [ -f "$BODY_FILE" ] || exit 0
         body=$(sed "1s|.*|<!-- contractwatch:$SPEC -->|" "$BODY_FILE")
         id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
           --jq ".[] | select(.body | startswith(\"<!-- contractwatch:$SPEC -->\")) | .id" | head -n1)

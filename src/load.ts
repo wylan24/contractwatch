@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import $RefParser from '@apidevtools/json-schema-ref-parser';
@@ -46,8 +46,9 @@ export function loadSpecAtRef(file: string, ref: string): Promise<Spec> {
   } catch {
     throw new SpecLoadError(`not inside a git repository, so --base ${ref} can't be read`, display(abs));
   }
+  const top = canonical(path.resolve(root));
   const show = (p: string) => {
-    const rel = path.relative(path.resolve(root), p).split(path.sep).join('/');
+    const rel = path.relative(top, canonical(p)).split(path.sep).join('/');
     return git(root, 'show', `${ref}:${rel}`);
   };
   let text: string;
@@ -59,6 +60,19 @@ export function loadSpecAtRef(file: string, ref: string): Promise<Spec> {
     throw new SpecLoadError(`can't read it at ${ref}: ${msg.trim() || (err as Error).message}`, display(abs));
   }
   return build(abs, text, ref, show);
+}
+
+/**
+ * The path with symlinks and Windows 8.3 short names (`RUNNER~1`) expanded, so it compares equal to what
+ * git reports. Parts that don't exist on disk (a file only present at the ref) are kept as written.
+ */
+function canonical(p: string): string {
+  try {
+    return realpathSync.native(p);
+  } catch {
+    const parent = path.dirname(p);
+    return parent === p ? p : path.join(canonical(parent), path.basename(p));
+  }
 }
 
 function git(cwd: string, ...args: string[]): string {
