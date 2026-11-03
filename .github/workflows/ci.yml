@@ -28,3 +28,72 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: node dist/cli.js --version
+
+  action:
+    # exercises action.yml exactly as a user's workflow would, comparing the working tree with HEAD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Unchanged spec (expected to pass)
+        id: unchanged
+        uses: ./
+        with:
+          spec: examples/petstore.yaml
+          base: HEAD
+
+      - name: Break the example spec and add a new one
+        run: |
+          cp test/fixtures/petstore-head.yaml examples/petstore.yaml
+          printf 'openapi: 3.1.0\ninfo: {title: New, version: "1"}\npaths: {}\n' > examples/new.yaml
+
+      - name: Breaking changes, report only (expected to pass)
+        id: report
+        uses: ./
+        with:
+          spec: examples/*.yaml
+          base: HEAD
+          fail-on: never
+
+      - name: Breaking changes (expected to fail)
+        id: fail
+        continue-on-error: true
+        uses: ./
+        with:
+          spec: |
+            examples/petstore.yaml
+            examples/new.yaml
+          base: HEAD
+
+      - name: Major version bump with allowBreakingOnMajorBump (expected to pass)
+        id: bumped
+        run: |
+          sed -i 's/^  version: 1.1.0$/  version: 2.0.0/' examples/petstore.yaml
+          echo '{"allowBreakingOnMajorBump": true}' > .contractwatch.json
+      - id: accepted
+        uses: ./
+        with:
+          spec: examples/petstore.yaml
+          base: HEAD
+
+      - name: Assert outcomes
+        env:
+          UNCHANGED: ${{ steps.unchanged.outputs.exit-code }}/${{ steps.unchanged.outputs.breaking }}
+          REPORT: ${{ steps.report.outputs.exit-code }}/${{ steps.report.outputs.breaking }}
+          FAIL: ${{ steps.fail.outcome }}/${{ steps.fail.outputs.exit-code }}/${{ steps.fail.outputs.breaking }}
+          ACCEPTED: ${{ steps.accepted.outputs.exit-code }}/${{ steps.accepted.outputs.breaking }}
+          DIR: ${{ steps.report.outputs.report-dir }}
+        run: |
+          echo "unchanged=$UNCHANGED report=$REPORT fail=$FAIL accepted=$ACCEPTED"
+          test "$UNCHANGED" = 0/0
+          test "$REPORT" = 0/21
+          test "$FAIL" = failure/1/21
+          test "$ACCEPTED" = 0/0
+          ls "$DIR"
+          test "$(ls -d "$DIR"/*/ | wc -l)" = 2
+          node -e "
+            const fs = require('fs');
+            const s = JSON.parse(fs.readFileSync(process.argv[1] + '/contractwatch.sarif', 'utf8'));
+            if (s.runs.length !== 1 || s.runs[0].results.length !== 31) throw new Error('expected 31 results in one run, got ' + s.runs[0].results.length);
+            console.log('merged SARIF ok');
+          " "$DIR"

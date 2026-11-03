@@ -7,7 +7,7 @@ branding:
 
 inputs:
   spec:
-    description: 'Path of the OpenAPI spec, relative to the repository root.'
+    description: 'OpenAPI spec(s) to check, relative to the repository root. One per line (or space-separated); globs like `api/**/openapi.yaml` work.'
     required: true
   base:
     description: 'Git ref to compare against. Defaults to the pull request base branch, or the previous commit on push.'
@@ -16,13 +16,13 @@ inputs:
     description: 'Fail the job on: breaking (default), warning, never.'
     default: breaking
   comment:
-    description: 'Post the report as a pull request comment, updated in place on each push (needs `pull-requests: write`).'
+    description: 'Post one comment per spec on the pull request, updated in place on each push (needs `pull-requests: write`).'
     default: 'true'
   upload-sarif:
     description: 'Upload changes to GitHub code scanning (needs `security-events: write`).'
     default: 'false'
   sarif-category:
-    description: 'Code scanning category, to keep several specs apart.'
+    description: 'Code scanning category, to keep several contractwatch jobs apart.'
     default: contractwatch
   token:
     description: 'GitHub token for the PR comment.'
@@ -30,14 +30,14 @@ inputs:
 
 outputs:
   exit-code:
-    description: '0 passed, 1 failing changes found, 2 contractwatch itself failed.'
+    description: '0 passed, 1 failing changes found, 2 contractwatch itself failed (the worst across specs).'
     value: ${{ steps.run.outputs.exit-code }}
   breaking:
-    description: 'Number of breaking changes.'
+    description: 'Number of breaking changes, across all specs, not counting accepted ones.'
     value: ${{ steps.run.outputs.breaking }}
-  report:
-    description: 'Path of the JSON report.'
-    value: ${{ steps.run.outputs.report }}
+  report-dir:
+    description: 'Folder with one subfolder per spec, each holding report.json, report.md and report.sarif.'
+    value: ${{ steps.run.outputs.dir }}
 
 runs:
   using: composite
@@ -78,23 +78,55 @@ runs:
       shell: bash
       env:
         NO_COLOR: '1'
-        SPEC: ${{ inputs.spec }}
+        SPECS: ${{ inputs.spec }}
         BASE: ${{ steps.base.outputs.ref }}
         FAIL_ON: ${{ inputs.fail-on }}
         OUT: ${{ runner.temp }}/contractwatch
       run: |
-        mkdir -p "$OUT"
-        set +e
-        node "$GITHUB_ACTION_PATH/src/cli.ts" diff "$SPEC" --base "$BASE" --fail-on "$FAIL_ON" \
-          --markdown "$OUT/report.md" --json "$OUT/report.json" --sarif "$OUT/report.sarif"
-        code=$?
-        set -e
-        [ -f "$OUT/report.md" ] && cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"
+        shopt -s globstar nullglob
+        rm -rf "$OUT" && mkdir -p "$OUT"
+        specs=()
+        while IFS= read -r line; do
+          for pattern in $line; do
+            matched=($pattern)
+            if [ ${#matched[@]} -eq 0 ]; then echo "::warning::No spec matches \`$pattern\`"; fi
+            specs+=("${matched[@]}")
+          done
+        done <<< "$SPECS"
+
+        worst=0
         breaking=0
-        [ -f "$OUT/report.json" ] && breaking=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).summary.breaking" "$OUT/report.json")
-        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        n=0
+        for spec in "${specs[@]}"; do
+          n=$((n + 1))
+          dir="$OUT/$n"
+          mkdir -p "$dir"
+          echo "$spec" > "$dir/spec"
+          echo "::group::$spec"
+          set +e
+          node "$GITHUB_ACTION_PATH/src/cli.ts" diff "$spec" --base "$BASE" --fail-on "$FAIL_ON" \
+            --markdown "$dir/report.md" --json "$dir/report.json" --sarif "$dir/report.sarif"
+          code=$?
+          set -e
+          echo "::endgroup::"
+          if [ "$code" -gt "$worst" ]; then worst=$code; fi
+          if [ -f "$dir/report.md" ]; then
+            cat "$dir/report.md" >> "$GITHUB_STEP_SUMMARY"
+            echo >> "$GITHUB_STEP_SUMMARY"
+            breaking=$((breaking + $(node -p "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).summary.breaking" "$dir/report.json")))
+          elif [ "$code" = 0 ]; then
+            echo "✅ \`$spec\` is new since \`$BASE\`; nothing to compare." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::contractwatch failed on $spec"
+          fi
+        done
+        if [ "$n" = 0 ]; then echo "::error::No OpenAPI specs found for: $SPECS"; worst=2; fi
+
+        sarifs=("$OUT"/*/report.sarif)
+        if [ ${#sarifs[@]} -gt 0 ]; then node "$GITHUB_ACTION_PATH/src/action/merge-sarif.ts" "$OUT/contractwatch.sarif" "${sarifs[@]}"; fi
+
+        echo "exit-code=$worst" >> "$GITHUB_OUTPUT"
         echo "breaking=$breaking" >> "$GITHUB_OUTPUT"
-        echo "report=$OUT/report.json" >> "$GITHUB_OUTPUT"
         echo "dir=$OUT" >> "$GITHUB_OUTPUT"
 
     - name: Comment on the pull request
@@ -105,27 +137,30 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.token }}
         PR: ${{ github.event.pull_request.number }}
-        BODY_FILE: ${{ steps.run.outputs.dir }}/report.md
-        SPEC: ${{ inputs.spec }}
+        OUT: ${{ steps.run.outputs.dir }}
       run: |
-        # one comment per spec, found by its hidden marker and edited in place
-        [ -f "$BODY_FILE" ] || exit 0
-        body=$(sed "1s|.*|<!-- contractwatch:$SPEC -->|" "$BODY_FILE")
-        id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
-          --jq ".[] | select(.body | startswith(\"<!-- contractwatch:$SPEC -->\")) | .id" | head -n1)
-        if [ -n "$id" ]; then
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" > /dev/null
-        elif grep -q '🔴\|🟡' "$BODY_FILE"; then
-          # don't add noise to PRs that only make additive changes
-          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" > /dev/null
-        fi
+        comments=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --jq '.[] | select(.body | startswith("<!-- contractwatch:")) | {id, marker: (.body | split("\n")[0])}')
+        for dir in "$OUT"/*/; do
+          if [ ! -f "$dir/report.md" ]; then continue; fi
+          spec=$(cat "$dir/spec")
+          # one comment per spec, found by its hidden marker and edited in place
+          marker="<!-- contractwatch:$spec -->"
+          body=$(awk -v m="$marker" 'NR == 1 { print m; next } { print }' "$dir/report.md")
+          id=$(jq -r --arg m "$marker" 'select(.marker == $m) | .id' <<< "$comments" | head -n1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" > /dev/null
+          elif grep -q '🔴\|🟡' "$dir/report.md"; then
+            # don't add noise to PRs that only make additive changes
+            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" > /dev/null
+          fi
+        done
 
     - name: Upload to code scanning
       if: ${{ inputs.upload-sarif == 'true' && steps.run.outputs.exit-code != '2' }}
       continue-on-error: true
       uses: github/codeql-action/upload-sarif@v4
       with:
-        sarif_file: ${{ steps.run.outputs.dir }}/report.sarif
+        sarif_file: ${{ steps.run.outputs.dir }}/contractwatch.sarif
         category: ${{ inputs.sarif-category }}
 
     - name: Result
