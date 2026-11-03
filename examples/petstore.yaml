@@ -60,6 +60,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Pet'
+    delete:
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Deleted
   /owners:
     get:
       responses:
@@ -79,6 +89,8 @@ components:
         id:
           type: number
         name:
+          type: string
+        tag:
           type: string
         status:
           type: string
