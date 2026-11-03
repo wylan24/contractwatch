@@ -95,14 +95,14 @@ jobs:
           echo "unchanged=$UNCHANGED report=$REPORT fail=$FAIL accepted=$ACCEPTED"
           test "$UNCHANGED" = 0/0
           test "$PUBLISHED" = 0/0
-          test "$REPORT" = 0/21
-          test "$FAIL" = failure/1/21
+          test "$REPORT" = 0/13
+          test "$FAIL" = failure/1/13
           test "$ACCEPTED" = 0/0
           ls "$DIR"
           test "$(ls -d "$DIR"/*/ | wc -l)" = 2
           node -e "
             const fs = require('fs');
             const s = JSON.parse(fs.readFileSync(process.argv[1] + '/contractwatch.sarif', 'utf8'));
-            if (s.runs.length !== 1 || s.runs[0].results.length !== 31) throw new Error('expected 31 results in one run, got ' + s.runs[0].results.length);
+            if (s.runs.length !== 1 || s.runs[0].results.length !== 19) throw new Error('expected 19 results in one run, got ' + s.runs[0].results.length);
             console.log('merged SARIF ok');
           " "$DIR"

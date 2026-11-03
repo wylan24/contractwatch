@@ -13,7 +13,11 @@ export interface SchemaContext {
   /** Prefix for `where`, e.g. `response 200 body`. */
   label: string;
   out: RawChange[];
+  /** Names of `components.schemas` entries by (dereferenced) object, so changes can be traced to them. */
+  names?: { base: ComponentNames; head: ComponentNames };
 }
+
+export type ComponentNames = Map<object, string>;
 
 export function diffSchema(base: Schema | undefined, head: Schema | undefined, pointer: string[], ctx: SchemaContext): void {
   walk(base, head, pointer, '', ctx, new Map());
@@ -21,11 +25,19 @@ export function diffSchema(base: Schema | undefined, head: Schema | undefined, p
 
 type Seen = Map<Schema, Set<Schema>>;
 
+/** The innermost named component being compared, and the body field it starts at. */
+interface Comp {
+  name: string;
+  at: string;
+}
+
 const TYPES = ['string', 'number', 'integer', 'boolean', 'object', 'array', 'null'] as const;
 type Type = (typeof TYPES)[number];
 
-function walk(baseIn: Schema | undefined, headIn: Schema | undefined, pointer: string[], field: string, ctx: SchemaContext, seen: Seen): void {
+function walk(baseIn: Schema | undefined, headIn: Schema | undefined, pointer: string[], field: string, ctx: SchemaContext, seen: Seen, outer?: Comp): void {
   if (!isSchema(baseIn) || !isSchema(headIn)) return;
+  const named = ctx.names?.head.get(headIn) ?? ctx.names?.base.get(baseIn);
+  const comp = named ? { name: named, at: field } : outer;
   // Cycles (and shared components) are compared once per pair.
   let pairs = seen.get(baseIn);
   if (!pairs) seen.set(baseIn, (pairs = new Set()));
@@ -34,7 +46,7 @@ function walk(baseIn: Schema | undefined, headIn: Schema | undefined, pointer: s
 
   const base = mergeAllOf(baseIn);
   const head = mergeAllOf(headIn);
-  const emit = (rule: RuleId, message: string, at: string[] = pointer) =>
+  const emit: Emit = (rule, message, at = pointer, f = field) =>
     ctx.out.push({
       rule,
       severity: severityOf(rule, ctx.direction),
@@ -43,6 +55,7 @@ function walk(baseIn: Schema | undefined, headIn: Schema | undefined, pointer: s
       where: ctx.label,
       message,
       pointer: at,
+      ...(comp ? inComponent(comp, f, message, subject(ctx.label)) : {}),
     });
   const name = field ? `\`${field}\`` : subject(ctx.label);
   const req = ctx.direction === 'request';
@@ -103,13 +116,13 @@ function walk(baseIn: Schema | undefined, headIn: Schema | undefined, pointer: s
     emit('constraint-loosened', `${name} pattern \`${base.pattern}\` was removed`);
   }
 
-  if (isObject(base, bt) && isObject(head, ht)) diffObject(base, head, pointer, field, ctx, seen, emit);
+  if (isObject(base, bt) && isObject(head, ht)) diffObject(base, head, pointer, field, ctx, seen, emit, comp);
 
   if (isSchema(base.items) && isSchema(head.items)) {
-    walk(base.items, head.items, [...pointer, 'items'], `${field || ''}[]`, ctx, seen);
+    walk(base.items, head.items, [...pointer, 'items'], `${field || ''}[]`, ctx, seen, comp);
   }
 
-  for (const kw of ['oneOf', 'anyOf'] as const) diffVariants(base[kw], head[kw], kw, pointer, field, ctx, seen, emit);
+  for (const kw of ['oneOf', 'anyOf'] as const) diffVariants(base[kw], head[kw], kw, pointer, field, ctx, seen, emit, comp);
 }
 
 const LIMITS: [string, 'min' | 'max' | 'other'][] = [
@@ -126,14 +139,25 @@ const LIMITS: [string, 'min' | 'max' | 'other'][] = [
   ['multipleOf', 'other'],
 ];
 
-type Emit = (rule: RuleId, message: string, at?: string[]) => void;
+type Emit = (rule: RuleId, message: string, at?: string[], field?: string) => void;
+
+/**
+ * The same change, described relative to its component: `[].tag` in one response and `pet.tag` in a
+ * request are both `Pet.tag`. Reports use this to show a shared schema's change once.
+ */
+function inComponent(comp: Comp, field: string, message: string, subjectText: string): Pick<RawChange, 'component' | 'componentMessage'> {
+  const rest = field.startsWith(comp.at) ? field.slice(comp.at.length) : '';
+  const own = `${comp.name}${rest && !/^[.[{]/.test(rest) ? '.' : ''}${rest}`;
+  const componentMessage = field ? message.split(`\`${field}\``).join(`\`${own}\``) : message.replace(subjectText, `\`${own}\``);
+  return { component: comp.name, componentMessage };
+}
 
 /** What the root of a schema is called in messages. */
 function subject(label: string): string {
   return /parameter/.test(label) ? 'the parameter' : /header/.test(label) ? 'the header' : 'the body';
 }
 
-function diffObject(base: Schema, head: Schema, pointer: string[], field: string, ctx: SchemaContext, seen: Seen, emit: Emit) {
+function diffObject(base: Schema, head: Schema, pointer: string[], field: string, ctx: SchemaContext, seen: Seen, emit: Emit, comp?: Comp) {
   const req = ctx.direction === 'request';
   // readOnly properties are never sent; writeOnly ones are never returned.
   const visible = (s: Schema) => {
@@ -153,19 +177,19 @@ function diffObject(base: Schema, head: Schema, pointer: string[], field: string
 
   for (const k of Object.keys(bp)) {
     if (k in hp) continue;
-    if (req && head.additionalProperties === false) emit('property-removed-closed', `\`${sub(k)}\` was removed and extra properties are rejected`, at(k));
-    else emit('property-removed', `\`${sub(k)}\` was removed`, at(k));
+    if (req && head.additionalProperties === false) emit('property-removed-closed', `\`${sub(k)}\` was removed and extra properties are rejected`, at(k), sub(k));
+    else emit('property-removed', `\`${sub(k)}\` was removed`, at(k), sub(k));
   }
   for (const k of Object.keys(hp)) {
     if (k in bp) continue;
-    if (hreq.has(k)) emit('required-property-added', `new required property \`${sub(k)}\``, at(k));
-    else emit('property-added', `new optional property \`${sub(k)}\``, at(k));
+    if (hreq.has(k)) emit('required-property-added', `new required property \`${sub(k)}\``, at(k), sub(k));
+    else emit('property-added', `new optional property \`${sub(k)}\``, at(k), sub(k));
   }
   for (const k of Object.keys(bp)) {
     if (!(k in hp)) continue;
-    if (!breq.has(k) && hreq.has(k)) emit('property-became-required', `\`${sub(k)}\` is now required`, at(k));
-    if (breq.has(k) && !hreq.has(k)) emit('property-became-optional', `\`${sub(k)}\` is now optional${req ? '' : ' and may be missing'}`, at(k));
-    walk(bp[k], hp[k], at(k), sub(k), ctx, seen);
+    if (!breq.has(k) && hreq.has(k)) emit('property-became-required', `\`${sub(k)}\` is now required`, at(k), sub(k));
+    if (breq.has(k) && !hreq.has(k)) emit('property-became-optional', `\`${sub(k)}\` is now optional${req ? '' : ' and may be missing'}`, at(k), sub(k));
+    walk(bp[k], hp[k], at(k), sub(k), ctx, seen, comp);
   }
 
   const ba = base.additionalProperties;
@@ -173,10 +197,10 @@ function diffObject(base: Schema, head: Schema, pointer: string[], field: string
   const open = (a: unknown) => a === undefined || a === true || isSchema(a);
   if (open(ba) && ha === false) emit('additional-properties-restricted', `${field ? `\`${field}\`` : subject(ctx.label)} no longer allows extra properties`, [...pointer, 'additionalProperties']);
   else if (ba === false && open(ha)) emit('additional-properties-allowed', `${field ? `\`${field}\`` : subject(ctx.label)} now allows extra properties`, [...pointer, 'additionalProperties']);
-  else if (isSchema(ba) && isSchema(ha)) walk(ba, ha, [...pointer, 'additionalProperties'], `${field || ''}{*}`, ctx, seen);
+  else if (isSchema(ba) && isSchema(ha)) walk(ba, ha, [...pointer, 'additionalProperties'], `${field || ''}{*}`, ctx, seen, comp);
 }
 
-function diffVariants(b: unknown, h: unknown, kw: string, pointer: string[], field: string, ctx: SchemaContext, seen: Seen, emit: Emit) {
+function diffVariants(b: unknown, h: unknown, kw: string, pointer: string[], field: string, ctx: SchemaContext, seen: Seen, emit: Emit, comp?: Comp) {
   const bv = Array.isArray(b) ? b.filter(isSchema) : [];
   const hv = Array.isArray(h) ? h.filter(isSchema) : [];
   if (!bv.length && !hv.length) return;
@@ -206,7 +230,7 @@ function diffVariants(b: unknown, h: unknown, kw: string, pointer: string[], fie
     for (const j of unmatchedH) emit('variant-added', `${name} has a new ${kw} variant ${label(hv[j], j)}`, [...pointer, kw, String(j)]);
     for (const i of unmatchedB) emit('variant-removed', `${name} lost ${kw} variant ${label(bv[i], i)}`, [...pointer, kw]);
   }
-  for (const [i, j] of pairs) walk(bv[i], hv[j], [...pointer, kw, String(j)], field, ctx, seen);
+  for (const [i, j] of pairs) walk(bv[i], hv[j], [...pointer, kw, String(j)], field, ctx, seen, comp);
 }
 
 /** A variant's shape, for matching: its types and property names. */

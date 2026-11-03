@@ -26,6 +26,10 @@ export interface Change {
    * points at where the thing was; `locate` falls back to the deepest part that still exists.
    */
   pointer: string[];
+  /** The `components.schemas` entry the change is in, when there is one (the innermost, for nested ones). */
+  component?: string;
+  /** `message`, worded relative to `component` (`Pet.tag` rather than `[].tag`), the same in every operation. */
+  componentMessage?: string;
   /** Why this change doesn't fail the check, when it was accepted (by id or by a major version bump). */
   accepted?: string;
 }
@@ -45,6 +49,8 @@ export interface Spec {
   doc: any;
   /** Raw text of the root file, for line numbers. */
   text: string;
+  /** `components.schemas` names by dereferenced schema object. */
+  names?: Map<object, string>;
 }
 
 export interface DiffResult {

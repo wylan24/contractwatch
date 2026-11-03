@@ -46,16 +46,21 @@ describe('cli', () => {
 
     const markdown = readFileSync(md, 'utf8');
     assert.match(markdown, /^<!-- contractwatch -->/);
-    assert.match(markdown, /### 🔴 21 breaking changes/);
-    assert.match(markdown, /🔴 21 breaking · 🟡 5 warnings · 🟢 5 non-breaking/);
+    // Pet's four breaking changes count once each, not once per operation that returns a Pet.
+    assert.match(markdown, /### 🔴 13 breaking changes/);
+    assert.match(markdown, /🔴 13 breaking · 🟡 3 warnings · 🟢 3 non-breaking/);
+    assert.match(markdown, /\| `GET \/pets`, `POST \/pets`, `GET \/pets\/\{petId\}` \| schema `Pet` \| `Pet.tag` was removed/);
     assert.match(markdown, /\| `DELETE \/pets\/\{id\}` \|/);
 
     const report = JSON.parse(readFileSync(json, 'utf8'));
-    assert.equal(report.summary.breaking, 21);
+    assert.equal(report.summary.breaking, 13);
+    // JSON keeps every occurrence; the three Pet.tag removals share one id.
+    assert.equal(report.changes.filter((c: any) => c.componentMessage === '`Pet.tag` was removed').length, 3);
+    assert.equal(new Set(report.changes.filter((c: any) => c.component === 'Pet').map((c: any) => c.id)).size, 6);
 
     const s = JSON.parse(readFileSync(sarif, 'utf8'));
     const results = s.runs[0].results;
-    assert.equal(results.length, report.changes.length);
+    assert.equal(results.length, 13 + 3 + 3);
     const removed = results.find((r: any) => r.ruleId === 'property-removed');
     // `tag` was removed from the Pet component; the closest surviving line is Pet's `properties:`.
     const headLines = readFileSync(head, 'utf8').split('\n');

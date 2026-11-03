@@ -1,5 +1,5 @@
 import type { Change, DiffResult, Severity } from '../types.ts';
-import { counts, groupByOperation, plural, SEVERITY_LABEL } from './summary.ts';
+import { counts, groupEntries, listOperations, plural, SEVERITY_LABEL } from './summary.ts';
 
 /** Hidden marker the GitHub Action uses to find and update its own PR comment instead of posting a new one. */
 export const COMMENT_MARKER = '<!-- contractwatch -->';
@@ -42,10 +42,14 @@ export function renderMarkdown(result: DiffResult): string {
 function section(changes: Change[], sev: Severity | 'accepted'): string {
   const accepted = sev === 'accepted';
   const rows = [`| Operation | Where | Change | ${accepted ? 'Reason' : 'Id'} |`, '| --- | --- | --- | --- |'];
-  for (const [op, list] of groupByOperation(changes, sev)) {
-    for (const ch of list) {
+  for (const [key, entries] of groupEntries(changes, sev)) {
+    for (const e of entries) {
+      const ch = e.change;
       const last = accepted ? cell(ch.accepted ?? '') : `\`${ch.id}\``;
-      rows.push(`| ${op ? `\`${op}\`` : 'Document'} | ${cell(ch.where ?? '')} | ${cell(ch.message)} <sub>\`${ch.rule}\`</sub> | ${last} |`);
+      // A shared schema's change is one row, listing every operation it affects.
+      const op = e.component ? listOperations(e.operations, (o) => `\`${o}\``) : key ? `\`${key}\`` : 'Document';
+      const where = e.component ? `schema \`${e.component}\`` : cell(ch.where ?? '');
+      rows.push(`| ${op} | ${where} | ${cell(e.message)} <sub>\`${ch.rule}\`</sub> | ${last} |`);
     }
   }
   return rows.join('\n');

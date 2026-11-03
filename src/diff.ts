@@ -1,5 +1,5 @@
 import { type RuleId, severityOf } from './rules.ts';
-import { diffSchema } from './schema-diff.ts';
+import { type ComponentNames, diffSchema } from './schema-diff.ts';
 import { createHash } from 'node:crypto';
 import type { Change, DiffResult, Direction, RawChange, Schema, Spec } from './types.ts';
 
@@ -22,6 +22,7 @@ export function diffSpecs(base: Spec, head: Spec): DiffResult {
     out.push(change('spec-version-changed', `OpenAPI version changed from ${base.openapi} to ${head.openapi}`, ['openapi']));
   }
 
+  const names: Names = { base: base.names ?? new Map(), head: head.names ?? new Map() };
   const b = indexOperations(base.doc);
   const h = indexOperations(head.doc);
   for (const [key, bo] of b) {
@@ -31,7 +32,7 @@ export function diffSpecs(base: Spec, head: Spec): DiffResult {
       out.push(change('operation-removed', `${label} was removed`, ['paths', bo.path, bo.method.toLowerCase()], label));
       continue;
     }
-    diffOperation(base.doc, head.doc, bo, ho, label, out);
+    diffOperation(base.doc, head.doc, bo, ho, label, out, names);
   }
   for (const [key, ho] of h) {
     if (b.has(key)) continue;
@@ -47,7 +48,9 @@ export function diffSpecs(base: Spec, head: Spec): DiffResult {
  * across unrelated edits and branches. Eight hex characters are plenty within one spec.
  */
 export function changeId(c: RawChange): string {
-  return createHash('sha256').update([c.rule, c.operation ?? '', c.where ?? '', c.message].join('\0')).digest('hex').slice(0, 8);
+  // A change inside a shared schema is one change wherever the schema is used, so it gets one id.
+  const parts = c.component ? ['component', c.rule, c.direction ?? '', c.component, c.componentMessage ?? ''] : [c.rule, c.operation ?? '', c.where ?? '', c.message];
+  return createHash('sha256').update(parts.join('\0')).digest('hex').slice(0, 8);
 }
 
 function change(rule: RuleId, message: string, pointer: string[], operation?: string, direction?: Direction, where?: string): RawChange {
@@ -67,7 +70,9 @@ function indexOperations(doc: any): Map<string, Operation> {
   return out;
 }
 
-function diffOperation(baseDoc: any, headDoc: any, bo: Operation, ho: Operation, label: string, out: RawChange[]) {
+type Names = { base: ComponentNames; head: ComponentNames };
+
+function diffOperation(baseDoc: any, headDoc: any, bo: Operation, ho: Operation, label: string, out: RawChange[], names: Names) {
   const at = ['paths', ho.path, ho.method.toLowerCase()];
   const push = (rule: RuleId, message: string, pointer: string[] = at, direction?: Direction, where?: string) =>
     out.push(change(rule, message, pointer, label, direction, where));
@@ -83,9 +88,9 @@ function diffOperation(baseDoc: any, headDoc: any, bo: Operation, ho: Operation,
     else push('security-changed', `${label} security changed from ${bs} to ${hs}`, [...at, 'security']);
   }
 
-  diffParameters(bo, ho, label, at, out);
-  diffRequestBody(bo.op.requestBody, ho.op.requestBody, label, at, out);
-  diffResponses(bo.op.responses ?? {}, ho.op.responses ?? {}, label, at, out);
+  diffParameters(bo, ho, label, at, out, names);
+  diffRequestBody(bo.op.requestBody, ho.op.requestBody, label, at, out, names);
+  diffResponses(bo.op.responses ?? {}, ho.op.responses ?? {}, label, at, out, names);
 }
 
 /**
@@ -132,7 +137,7 @@ function parametersOf(o: Operation): Map<string, Param> {
   return byKey;
 }
 
-function diffParameters(bo: Operation, ho: Operation, label: string, at: string[], out: RawChange[]) {
+function diffParameters(bo: Operation, ho: Operation, label: string, at: string[], out: RawChange[], names: Names) {
   const bp = parametersOf(bo);
   const hp = parametersOf(ho);
   const ptr = (p: Param) => (p.pathLevel ? ['paths', ho.path, 'parameters', String(p.index)] : [...at, 'parameters', String(p.index)]);
@@ -153,7 +158,7 @@ function diffParameters(bo: Operation, ho: Operation, label: string, at: string[
     if (!old.required && p.required) push('parameter-became-required', `${desc(p)} is now required`, ptr(p), desc(p));
     if (old.required && !p.required) push('parameter-became-optional', `${desc(p)} is now optional`, ptr(p), desc(p));
     if (!old.deprecated && p.deprecated) push('parameter-deprecated', `${desc(p)} is deprecated`, ptr(p), desc(p));
-    diffSchema(old.schema, p.schema, [...ptr(p), 'schema'], { operation: label, direction: 'request', label: desc(p), out });
+    diffSchema(old.schema, p.schema, [...ptr(p), 'schema'], { operation: label, direction: 'request', label: desc(p), out, names });
   }
 }
 
@@ -165,7 +170,7 @@ function contentOf(container: any): Map<string, { type: string; schema?: Schema 
   return out;
 }
 
-function diffRequestBody(b: any, h: any, label: string, at: string[], out: RawChange[]) {
+function diffRequestBody(b: any, h: any, label: string, at: string[], out: RawChange[], names: Names) {
   const ptr = [...at, 'requestBody'];
   const push = (rule: RuleId, message: string, pointer = ptr) => out.push(change(rule, message, pointer, label, 'request', 'request body'));
   if (!b && !h) return;
@@ -184,11 +189,11 @@ function diffRequestBody(b: any, h: any, label: string, at: string[], out: RawCh
       continue;
     }
     const where = bc.size > 1 ? `request body (${m.type})` : 'request body';
-    diffSchema(old.schema, m.schema, [...ptr, 'content', m.type, 'schema'], { operation: label, direction: 'request', label: where, out });
+    diffSchema(old.schema, m.schema, [...ptr, 'content', m.type, 'schema'], { operation: label, direction: 'request', label: where, out, names });
   }
 }
 
-function diffResponses(b: Record<string, any>, h: Record<string, any>, label: string, at: string[], out: RawChange[]) {
+function diffResponses(b: Record<string, any>, h: Record<string, any>, label: string, at: string[], out: RawChange[], names: Names) {
   const ptr = [...at, 'responses'];
   const push = (rule: RuleId, message: string, pointer: string[], where: string) => out.push(change(rule, message, pointer, label, 'response', where));
   const success = (code: string) => /^[23]/.test(code);
@@ -217,7 +222,7 @@ function diffResponses(b: Record<string, any>, h: Record<string, any>, label: st
         continue;
       }
       const label2 = `${where} body${bc.size > 1 ? ` (${m.type})` : ''}`;
-      diffSchema(old.schema, m.schema, [...rptr, 'content', m.type, 'schema'], { operation: label, direction: 'response', label: label2, out });
+      diffSchema(old.schema, m.schema, [...rptr, 'content', m.type, 'schema'], { operation: label, direction: 'response', label: label2, out, names });
     }
 
     const bh = headersOf(br);
@@ -231,7 +236,7 @@ function diffResponses(b: Record<string, any>, h: Record<string, any>, label: st
       const old = bh.get(k);
       const hptr = [...rptr, 'headers', hd.name];
       if (!old) push('response-header-added', `the ${code} response now sends header \`${hd.name}\``, hptr, where);
-      else diffSchema(old.def?.schema, hd.def?.schema, [...hptr, 'schema'], { operation: label, direction: 'response', label: `${where} header \`${hd.name}\``, out });
+      else diffSchema(old.def?.schema, hd.def?.schema, [...hptr, 'schema'], { operation: label, direction: 'response', label: `${where} header \`${hd.name}\``, out, names });
     }
   }
 }

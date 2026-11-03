@@ -168,3 +168,37 @@ test('multi-file specs resolve external $refs', async () => {
   const result = diffSpecs(await loadSpec(fixture('multi-base/openapi.yaml')), await loadSpec(fixture('multi-head/openapi.yaml')));
   assert.deepEqual(rules(result.changes), ['became-nullable:breaking', 'property-became-optional:breaking']);
 });
+
+describe('shared schemas', () => {
+  const pet = (props: any) => ({ type: 'object', properties: props });
+  const doc = (Pet: any) => {
+    const res = (schema: any) => ({ responses: { '200': { description: '', content: { 'application/json': { schema } } } } });
+    // Like a dereferenced spec: every use of Pet is the component object itself.
+    return { openapi: '3.1.0', paths: { '/pets': { get: res({ type: 'array', items: Pet }) }, '/pets/{id}': { get: res(Pet) } }, components: { schemas: { Pet } } };
+  };
+  const named = (d: any): Spec => ({ ...spec(d), names: new Map([[d.components.schemas.Pet, 'Pet']]) });
+
+  test('a change in a component is worded relative to it and shares one id', () => {
+    const base = pet({ name: { type: 'string' }, tag: { type: 'string' } });
+    const head = pet({ name: { type: 'string' } });
+    const changes = diffSpecs(named(doc(base)), named(doc(head))).changes;
+    assert.deepEqual(
+      changes.map((c) => [c.operation, c.message, c.component, c.componentMessage]),
+      [
+        ['GET /pets', '`[].tag` was removed', 'Pet', '`Pet.tag` was removed'],
+        ['GET /pets/{id}', '`tag` was removed', 'Pet', '`Pet.tag` was removed'],
+      ],
+    );
+    assert.equal(changes[0].id, changes[1].id);
+  });
+
+  test('a change at the root of a component names the component', () => {
+    const changes = diffSpecs(named(doc({ type: 'string' })), named(doc({ type: 'integer' }))).changes;
+    assert.equal(changes[0].componentMessage, '`Pet` type changed from string to integer');
+  });
+
+  test('without component names, ids stay per operation', () => {
+    const changes = diffSpecs(spec(doc(pet({ tag: { type: 'string' } }))), spec(doc(pet({})))).changes;
+    assert.notEqual(changes[0].id, changes[1].id);
+  });
+});

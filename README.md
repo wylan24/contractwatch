@@ -95,6 +95,11 @@ It also understands `allOf` (moving properties into a shared base isn't a change
 matched by shape, not position), `readOnly`/`writeOnly`, OpenAPI 3.0 `nullable` vs. 3.1 type arrays, recursive
 schemas, and renamed path parameters (`/pets/{id}` → `/pets/{petId}` is the same operation).
 
+A change to a shared schema is reported once, not once per endpoint that uses it. If `Pet` loses its `tag`
+field and three operations return a `Pet`, the report has one line, `Pet.tag was removed`, listing the three
+operations. It counts as one change, has one id to accept, and gives one code-scanning alert on the schema's line.
+(The JSON report still lists every occurrence, each with its `component`.)
+
 ## GitHub Action
 
 ```yaml

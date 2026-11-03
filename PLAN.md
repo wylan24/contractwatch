@@ -72,6 +72,11 @@ is not a removal.
 - [ ] `contractwatch accept <id> --reason …` to add entries without hand-editing
 - [ ] `/contractwatch accept` PR comment command (later)
 
+### M3.5: less noise
+- [x] Changes inside a shared `components.schemas` entry are reported once (`Pet.tag was removed`, used by N
+      operations), count once, share one id, and give one SARIF alert
+- [ ] Same for schemas shared through external `$ref` files (they have no component name today)
+
 ### M4: spec vs. reality (drift)
 - [ ] `contractwatch verify spec.yaml --har traffic.har` / `--samples dir/`: validate real responses
       against the spec; report undocumented fields, type mismatches, undocumented status codes

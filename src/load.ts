@@ -109,7 +109,11 @@ async function build(abs: string, text: string, source: string, read: (absPath: 
     throw new SpecLoadError((err as Error).message, file);
   }
 
-  return { file, source, openapi: raw.openapi, title: raw.info?.title ?? '', version: String(raw.info?.version ?? ''), doc, text };
+  // Dereferencing makes every `$ref` to a component the same object as the component itself.
+  const names = new Map<object, string>();
+  for (const [name, s] of Object.entries<unknown>(doc.components?.schemas ?? {})) if (s && typeof s === 'object') names.set(s, name);
+
+  return { file, source, openapi: raw.openapi, title: raw.info?.title ?? '', version: String(raw.info?.version ?? ''), doc, text, names };
 }
 
 /** The ref parser hands resolvers `file://` URLs or plain paths, depending on platform. */
