@@ -47,6 +47,7 @@ describe('cli', () => {
     const markdown = readFileSync(md, 'utf8');
     assert.match(markdown, /^<!-- contractwatch -->/);
     assert.match(markdown, /### 🔴 21 breaking changes/);
+    assert.match(markdown, /🔴 21 breaking · 🟡 5 warnings · 🟢 5 non-breaking/);
     assert.match(markdown, /\| `DELETE \/pets\/\{id\}` \|/);
 
     const report = JSON.parse(readFileSync(json, 'utf8'));
