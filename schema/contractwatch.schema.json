@@ -1,0 +1,648 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/wylan24/contractwatch/main/schema/contractwatch.schema.json",
+  "title": "contractwatch configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "rules": {
+      "description": "Change a rule's severity, or turn it off.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "spec-version-changed": {
+          "description": "OpenAPI version changed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "base-path-changed": {
+          "description": "Server base path changed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "server-removed": {
+          "description": "Server URL removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "server-added": {
+          "description": "Server URL added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "operation-removed": {
+          "description": "Operation removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "operation-added": {
+          "description": "Operation added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "operation-deprecated": {
+          "description": "Operation deprecated",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "operation-undeprecated": {
+          "description": "Operation no longer deprecated",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "security-added": {
+          "description": "Operation now requires authentication",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "security-changed": {
+          "description": "Operation security requirements changed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "security-removed": {
+          "description": "Operation no longer requires authentication",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "required-parameter-added": {
+          "description": "Required parameter added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "parameter-added": {
+          "description": "Optional parameter added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "parameter-removed": {
+          "description": "Parameter removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "parameter-became-required": {
+          "description": "Parameter became required",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "parameter-became-optional": {
+          "description": "Parameter became optional",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "parameter-deprecated": {
+          "description": "Parameter deprecated",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "parameter-serialization-changed": {
+          "description": "Parameter style or explode changed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "required-request-body-added": {
+          "description": "Required request body added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "request-body-added": {
+          "description": "Optional request body added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "request-body-removed": {
+          "description": "Request body removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "request-body-became-required": {
+          "description": "Request body became required",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "request-body-became-optional": {
+          "description": "Request body became optional",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "request-media-type-removed": {
+          "description": "Request media type removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "request-media-type-added": {
+          "description": "Request media type added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "success-response-removed": {
+          "description": "Success response removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "response-now-covered": {
+          "description": "Response folded into a range or default",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "error-response-removed": {
+          "description": "Error response removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "response-added": {
+          "description": "Response added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "response-media-type-removed": {
+          "description": "Response media type removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "response-media-type-added": {
+          "description": "Response media type added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "response-header-removed": {
+          "description": "Response header removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "required-response-header-removed": {
+          "description": "Required response header removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "response-header-added": {
+          "description": "Response header added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "type-changed": {
+          "description": "Type changed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "type-widened": {
+          "description": "Type widened",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "type-narrowed": {
+          "description": "Type narrowed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "became-nullable": {
+          "description": "Became nullable",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "no-longer-nullable": {
+          "description": "No longer nullable",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "property-removed": {
+          "description": "Property removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "property-removed-closed": {
+          "description": "Property removed from a closed object",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "required-property-added": {
+          "description": "Required property added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "property-added": {
+          "description": "Property added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "property-became-required": {
+          "description": "Property became required",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "property-became-optional": {
+          "description": "Property became optional",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "enum-value-added": {
+          "description": "Enum value added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "enum-value-removed": {
+          "description": "Enum value removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "enum-added": {
+          "description": "Values restricted to an enum",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "enum-removed": {
+          "description": "Enum restriction removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "format-changed": {
+          "description": "Format changed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "constraint-tightened": {
+          "description": "Constraint tightened",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "constraint-loosened": {
+          "description": "Constraint loosened",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "pattern-changed": {
+          "description": "Pattern changed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "additional-properties-restricted": {
+          "description": "Additional properties no longer allowed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "additional-properties-allowed": {
+          "description": "Additional properties now allowed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "variant-added": {
+          "description": "oneOf/anyOf variant added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "variant-removed": {
+          "description": "oneOf/anyOf variant removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "discriminator-property-changed": {
+          "description": "Discriminator property changed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "discriminator-value-added": {
+          "description": "Discriminator value added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "discriminator-value-removed": {
+          "description": "Discriminator value removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "callback-removed": {
+          "description": "Callback removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "callback-added": {
+          "description": "Callback added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "webhook-removed": {
+          "description": "Webhook removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "webhook-added": {
+          "description": "Webhook added",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        },
+        "callback-media-type-removed": {
+          "description": "Callback or webhook media type removed",
+          "enum": [
+            "breaking",
+            "warning",
+            "info",
+            "off"
+          ]
+        }
+      }
+    },
+    "ignore": {
+      "description": "Operations to skip: `/path/*` matches one segment, `/path/**` any depth, optionally prefixed by a method.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "examples": [
+          "/internal/**",
+          "DELETE /admin/*"
+        ]
+      }
+    },
+    "accept": {
+      "description": "Breaking changes made on purpose. They are still reported, with the reason, but don't fail the check.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "description": "Change id, as shown in the report.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}$"
+          },
+          "reason": {
+            "description": "Why this break is intended. Shown in the report.",
+            "type": "string",
+            "minLength": 1
+          },
+          "expires": {
+            "description": "After this date (YYYY-MM-DD) the acceptance no longer applies.",
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          }
+        }
+      }
+    },
+    "allowBreakingOnMajorBump": {
+      "description": "Breaking changes pass when info.version gets a new major version (or a new minor version in 0.x).",
+      "type": "boolean"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { RULES } from './rules.ts';
 import type { DiffResult, Severity } from './types.ts';
@@ -48,6 +48,41 @@ export function findConfig(dir: string): string | undefined {
     if (existsSync(f)) return f;
     if (existsSync(path.join(d, '.git')) || path.dirname(d) === d) return undefined;
   }
+}
+
+/** Where a new config file goes: next to the existing one, else at the repository root, else in `dir`. */
+export function configPathFor(dir: string): string {
+  const existing = findConfig(dir);
+  if (existing) return existing;
+  for (let d = path.resolve(dir); ; d = path.dirname(d)) {
+    if (existsSync(path.join(d, '.git'))) return path.join(d, CONFIG_FILE);
+    if (path.dirname(d) === d) return path.join(path.resolve(dir), CONFIG_FILE);
+  }
+}
+
+/**
+ * Add acceptances to a config file, creating it if needed. An id that is already accepted gets the new
+ * reason and expiry. Other settings are kept as they are.
+ */
+export function addAcceptances(file: string, entries: Acceptance[]): { added: string[]; updated: string[] } {
+  const config: Config = existsSync(file) ? loadConfig(file) : {};
+  const accept = [...(config.accept ?? [])];
+  const added: string[] = [];
+  const updated: string[] = [];
+  for (const e of entries) {
+    const i = accept.findIndex((a) => a.id === e.id);
+    if (i === -1) {
+      accept.push(e);
+      added.push(e.id);
+    } else {
+      accept[i] = e;
+      updated.push(e.id);
+    }
+  }
+  const next = { ...config, accept };
+  validate(next, path.basename(file));
+  writeFileSync(file, JSON.stringify(next, null, 2) + '\n');
+  return { added, updated };
 }
 
 export function loadConfig(file: string): Config {
