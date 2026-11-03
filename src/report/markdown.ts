@@ -16,7 +16,8 @@ export function renderMarkdown(result: DiffResult): string {
   else if (result.changes.length) out.push(`### ✅ No breaking changes in ${spec}`);
   else out.push(`### ✅ No API contract changes in ${spec}`);
 
-  const tally = (['breaking', 'warning', 'info'] as const).filter((s) => c[s]).map((s) => `${ICON[s]} ${c[s]} ${SEVERITY_LABEL[s].toLowerCase()}`);
+  const noun: Record<Severity, string> = { breaking: 'breaking', warning: 'warning', info: 'non-breaking' };
+  const tally = (['breaking', 'warning', 'info'] as const).filter((s) => c[s]).map((s) => `${ICON[s]} ${s === 'warning' ? plural(c[s], 'warning') : `${c[s]} ${noun[s]}`}`);
   if (tally.length) out.push('', tally.join(' · '));
 
   for (const sev of ['breaking', 'warning', 'info'] as const) {
