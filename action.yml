@@ -1,0 +1,138 @@
+name: contractwatch
+description: 'Catch breaking changes in OpenAPI specs on pull requests: removed fields, changed types, new required parameters.'
+author: wylan24
+branding:
+  icon: shield
+  color: orange
+
+inputs:
+  spec:
+    description: 'Path of the OpenAPI spec, relative to the repository root.'
+    required: true
+  base:
+    description: 'Git ref to compare against. Defaults to the pull request base branch, or the previous commit on push.'
+    default: ''
+  fail-on:
+    description: 'Fail the job on: breaking (default), warning, never.'
+    default: breaking
+  comment:
+    description: 'Post the report as a pull request comment, updated in place on each push (needs `pull-requests: write`).'
+    default: 'true'
+  upload-sarif:
+    description: 'Upload changes to GitHub code scanning (needs `security-events: write`).'
+    default: 'false'
+  sarif-category:
+    description: 'Code scanning category, to keep several specs apart.'
+    default: contractwatch
+  token:
+    description: 'GitHub token for the PR comment.'
+    default: ${{ github.token }}
+
+outputs:
+  exit-code:
+    description: '0 passed, 1 failing changes found, 2 contractwatch itself failed.'
+    value: ${{ steps.run.outputs.exit-code }}
+  breaking:
+    description: 'Number of breaking changes.'
+    value: ${{ steps.run.outputs.breaking }}
+  report:
+    description: 'Path of the JSON report.'
+    value: ${{ steps.run.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22
+
+    - name: Install contractwatch
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      # runtime dependencies only; Node 22.18+ runs the TypeScript sources directly
+      run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+    - name: Fetch the base revision
+      id: base
+      shell: bash
+      env:
+        INPUT_BASE: ${{ inputs.base }}
+        PR_BASE: ${{ github.base_ref }}
+        BEFORE: ${{ github.event.before }}
+      run: |
+        if [ -n "$INPUT_BASE" ]; then ref="$INPUT_BASE"
+        elif [ -n "$PR_BASE" ]; then
+          git fetch --no-tags --depth=1 origin "+refs/heads/$PR_BASE:refs/remotes/origin/$PR_BASE"
+          ref="origin/$PR_BASE"
+        elif [ -n "$BEFORE" ] && [ "$BEFORE" != "0000000000000000000000000000000000000000" ]; then
+          git fetch --no-tags --depth=1 origin "$BEFORE"
+          ref="$BEFORE"
+        else
+          echo "::error::No base to compare against; set the \`base\` input."
+          exit 2
+        fi
+        echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+    - name: Compare
+      id: run
+      shell: bash
+      env:
+        NO_COLOR: '1'
+        SPEC: ${{ inputs.spec }}
+        BASE: ${{ steps.base.outputs.ref }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        OUT: ${{ runner.temp }}/contractwatch
+      run: |
+        mkdir -p "$OUT"
+        set +e
+        node "$GITHUB_ACTION_PATH/src/cli.ts" diff "$SPEC" --base "$BASE" --fail-on "$FAIL_ON" \
+          --markdown "$OUT/report.md" --json "$OUT/report.json" --sarif "$OUT/report.sarif"
+        code=$?
+        set -e
+        [ -f "$OUT/report.md" ] && cat "$OUT/report.md" >> "$GITHUB_STEP_SUMMARY"
+        breaking=0
+        [ -f "$OUT/report.json" ] && breaking=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).summary.breaking" "$OUT/report.json")
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        echo "breaking=$breaking" >> "$GITHUB_OUTPUT"
+        echo "report=$OUT/report.json" >> "$GITHUB_OUTPUT"
+        echo "dir=$OUT" >> "$GITHUB_OUTPUT"
+
+    - name: Comment on the pull request
+      if: ${{ inputs.comment == 'true' && github.event.pull_request && steps.run.outputs.exit-code != '2' && hashFiles(format('{0}/report.md', steps.run.outputs.dir)) != '' }}
+      # pull requests from forks get a read-only token; the job summary still has the report
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        PR: ${{ github.event.pull_request.number }}
+        BODY_FILE: ${{ steps.run.outputs.dir }}/report.md
+        SPEC: ${{ inputs.spec }}
+      run: |
+        # one comment per spec, found by its hidden marker and edited in place
+        marker="<!-- contractwatch -->"
+        body=$(sed "1s|.*|<!-- contractwatch:$SPEC -->|" "$BODY_FILE")
+        id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR/comments" \
+          --jq ".[] | select(.body | startswith(\"<!-- contractwatch:$SPEC -->\")) | .id" | head -n1)
+        if [ -n "$id" ]; then
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" > /dev/null
+        elif grep -q '🔴\|🟡' "$BODY_FILE"; then
+          # don't add noise to PRs that only make additive changes
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" > /dev/null
+        fi
+
+    - name: Upload to code scanning
+      if: ${{ inputs.upload-sarif == 'true' && steps.run.outputs.exit-code != '2' }}
+      continue-on-error: true
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: ${{ steps.run.outputs.dir }}/report.sarif
+        category: ${{ inputs.sarif-category }}
+
+    - name: Result
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+      run: |
+        if [ "$CODE" = "2" ]; then echo "::error::contractwatch failed to run"; exit 2; fi
+        if [ "$CODE" = "1" ]; then echo "::error::The API contract has changes that will break clients (see the summary)"; exit 1; fi
+        exit 0

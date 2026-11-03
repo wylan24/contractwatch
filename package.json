@@ -1,0 +1,45 @@
+{
+  "name": "@wylan24/contractwatch",
+  "version": "0.1.0-alpha.0",
+  "description": "Catch breaking changes in OpenAPI specs before they ship: removed fields, changed types, new required parameters. Runs on pull requests.",
+  "type": "module",
+  "bin": {
+    "contractwatch": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node src/cli.ts",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "openapi",
+    "breaking-changes",
+    "api",
+    "contract",
+    "diff",
+    "github-action",
+    "sarif"
+  ],
+  "license": "MIT",
+  "author": "wylan24",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wylan24/contractwatch.git"
+  },
+  "private": true,
+  "dependencies": {
+    "@apidevtools/json-schema-ref-parser": "^16.0.5",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^7.0.2"
+  }
+}
