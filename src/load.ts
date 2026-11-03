@@ -93,8 +93,9 @@ async function build(abs: string, text: string, source: string, read: (absPath: 
   }
 
   let doc: any;
+  const parser = new $RefParser();
   try {
-    doc = await new $RefParser().dereference(abs, raw, {
+    doc = await parser.dereference(abs, raw, {
       resolve: {
         file: {
           order: 1,
@@ -109,11 +110,26 @@ async function build(abs: string, text: string, source: string, read: (absPath: 
     throw new SpecLoadError((err as Error).message, file);
   }
 
-  // Dereferencing makes every `$ref` to a component the same object as the component itself.
+  // Dereferencing makes every `$ref` to a component the same object as the component itself, so shared
+  // schemas can be recognized by identity: `components.schemas` entries, and schemas in other files.
   const names = new Map<object, string>();
-  for (const [name, s] of Object.entries<unknown>(doc.components?.schemas ?? {})) if (s && typeof s === 'object') names.set(s, name);
+  const nameAll = (schemas: Record<string, unknown> | undefined) => {
+    for (const [name, s] of Object.entries(schemas ?? {})) if (s && typeof s === 'object' && !names.has(s)) names.set(s, name);
+  };
+  nameAll(doc.components?.schemas);
+  for (const [url, value] of Object.entries<any>(parser.$refs.values())) {
+    if (!value || typeof value !== 'object' || /^https?:/i.test(url) || path.resolve(toPath(url)) === abs) continue;
+    if (value.components?.schemas) nameAll(value.components.schemas);
+    // A file that is one schema (`user.yaml`) is named after the file; otherwise its top-level entries are schemas.
+    if (looksLikeSchema(value)) names.set(value, path.basename(toPath(url)).replace(/\.(ya?ml|json)$/i, ''));
+    else nameAll(Object.fromEntries(Object.entries(value).filter(([, v]) => looksLikeSchema(v))));
+  }
 
   return { file, source, openapi: raw.openapi, title: raw.info?.title ?? '', version: String(raw.info?.version ?? ''), doc, text, names };
+}
+
+function looksLikeSchema(v: any): boolean {
+  return !!v && typeof v === 'object' && !Array.isArray(v) && ['type', 'properties', 'items', 'allOf', 'oneOf', 'anyOf', 'enum', 'const', 'additionalProperties'].some((k) => k in v);
 }
 
 /** The ref parser hands resolvers `file://` URLs or plain paths, depending on platform. */

@@ -70,9 +70,10 @@ describe('cli', () => {
 });
 
 test('locator follows local $refs to the component that defines a field', () => {
-  const text = readFileSync(path.join(fixtures, 'petstore-head.yaml'), 'utf8');
+  const file = path.join(fixtures, 'petstore-head.yaml');
+  const text = readFileSync(file, 'utf8');
   const lines = text.split('\n');
-  const line = new Locator(text).line(['paths', '/pets/{petId}', 'get', 'responses', '200', 'content', 'application/json', 'schema', 'properties', 'birthday']);
+  const line = new Locator(file, text).line(['paths', '/pets/{petId}', 'get', 'responses', '200', 'content', 'application/json', 'schema', 'properties', 'birthday']);
   assert.match(lines[line - 1], /^\s+birthday:/);
 });
 
@@ -106,4 +107,13 @@ describe('--base <git-ref>', () => {
     assert.equal(r.code, 0, r.stderr);
     assert.match(r.stdout, /new since HEAD/);
   });
+});
+
+test('locator follows $refs into other files', () => {
+  const file = path.join(fixtures, 'split', 'openapi.yaml');
+  const loc = new Locator(file, readFileSync(file, 'utf8'));
+  const res = (p: string) => ['paths', p, 'get', 'responses', '200', 'content', 'application/json', 'schema'];
+  assert.deepEqual(loc.locate([...res('/users/{id}'), 'properties', 'email']), { file: path.join(fixtures, 'split', 'user.yaml'), line: 5 });
+  assert.deepEqual(loc.locate([...res('/users'), 'items', 'properties', 'id']), { file: path.join(fixtures, 'split', 'user.yaml'), line: 3 });
+  assert.deepEqual(loc.locate([...res('/teams'), 'properties', 'name']), { file: path.join(fixtures, 'split', 'models.yaml'), line: 4 });
 });

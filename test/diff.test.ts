@@ -266,3 +266,14 @@ describe('more of the spec', () => {
     assert.match(changes[0].where ?? '', /callback onEvent \(POST\) request body/);
   });
 });
+
+test('schemas from other files are grouped like components', async () => {
+  const split = (await loadSpec(fixture('split/openapi.yaml'))) as Spec;
+  const user = split.doc.paths['/users/{id}'].get.responses['200'].content['application/json'].schema;
+  const team = split.doc.paths['/teams'].get.responses['200'].content['application/json'].schema;
+  assert.equal(split.names?.get(user), 'user');
+  assert.equal(split.names?.get(team), 'Team');
+
+  const result = diffSpecs(await loadSpec(fixture('multi-base/openapi.yaml')), await loadSpec(fixture('multi-head/openapi.yaml')));
+  assert.deepEqual(result.changes.map((c) => c.componentMessage), ['`user.email` is now optional and may be missing', '`user.email` can now be null']);
+});

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { Locator } from '../locate.ts';
 import { RULES, type RuleId } from '../rules.ts';
 import type { DiffResult, Severity } from '../types.ts';
@@ -13,18 +14,21 @@ import { type Entry, groupEntries, listOperations, SEVERITIES } from './summary.
 const LEVEL: Record<Severity, 'error' | 'warning' | 'note'> = { breaking: 'error', warning: 'warning', info: 'note' };
 
 export function renderSarif(result: DiffResult, headText: string, version: string): string {
-  const locator = new Locator(headText);
+  const locator = new Locator(path.resolve(result.head.file), headText);
+  // Changes in a schema from another file point into that file.
+  const uri = (abs: string) => path.relative(process.cwd(), abs).split(path.sep).join('/');
   const used = new Set<string>();
   const entries: Entry[] = [];
   for (const bucket of [...SEVERITIES, 'accepted'] as const) for (const list of groupEntries(result.changes, bucket).values()) entries.push(...list);
   const results = entries.map((e) => {
     const ch = e.change;
+    const at = locator.locate(ch.pointer);
     used.add(ch.rule);
     return {
       ruleId: ch.rule,
       level: LEVEL[ch.severity],
       message: { text: text(e) },
-      locations: [{ physicalLocation: { artifactLocation: { uri: result.head.file }, region: { startLine: locator.line(ch.pointer) } } }],
+      locations: [{ physicalLocation: { artifactLocation: { uri: uri(at.file) }, region: { startLine: at.line } } }],
       partialFingerprints: { contractwatch: fingerprint(e) },
       ...(ch.accepted ? { suppressions: [{ kind: 'external', justification: ch.accepted }] } : {}),
       properties: { id: ch.id, severity: ch.severity, operations: e.operations.filter(Boolean), direction: ch.direction, component: e.component },
