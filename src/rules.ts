@@ -13,6 +13,9 @@ const both = (request: Severity, response: Severity) => ({ request, response });
 
 export const RULES = {
   'spec-version-changed': { title: 'OpenAPI version changed', severity: 'info' },
+  'base-path-changed': { title: 'Server base path changed', severity: 'breaking' },
+  'server-removed': { title: 'Server URL removed', severity: 'warning' },
+  'server-added': { title: 'Server URL added', severity: 'info' },
 
   'operation-removed': { title: 'Operation removed', severity: 'breaking' },
   'operation-added': { title: 'Operation added', severity: 'info' },
@@ -28,6 +31,7 @@ export const RULES = {
   'parameter-became-required': { title: 'Parameter became required', severity: 'breaking' },
   'parameter-became-optional': { title: 'Parameter became optional', severity: 'info' },
   'parameter-deprecated': { title: 'Parameter deprecated', severity: 'info' },
+  'parameter-serialization-changed': { title: 'Parameter style or explode changed', severity: 'breaking' },
 
   'required-request-body-added': { title: 'Required request body added', severity: 'breaking' },
   'request-body-added': { title: 'Optional request body added', severity: 'info' },
@@ -38,6 +42,7 @@ export const RULES = {
   'request-media-type-added': { title: 'Request media type added', severity: 'info' },
 
   'success-response-removed': { title: 'Success response removed', severity: 'breaking' },
+  'response-now-covered': { title: 'Response folded into a range or default', severity: 'info' },
   'error-response-removed': { title: 'Error response removed', severity: 'info' },
   'response-added': { title: 'Response added', severity: 'info' },
   'response-media-type-removed': { title: 'Response media type removed', severity: 'breaking' },
@@ -69,6 +74,16 @@ export const RULES = {
   'additional-properties-allowed': { title: 'Additional properties now allowed', severity: both('info', 'warning') },
   'variant-added': { title: 'oneOf/anyOf variant added', severity: both('info', 'warning') },
   'variant-removed': { title: 'oneOf/anyOf variant removed', severity: both('breaking', 'info') },
+  'discriminator-property-changed': { title: 'Discriminator property changed', severity: 'breaking' },
+  'discriminator-value-added': { title: 'Discriminator value added', severity: both('info', 'warning') },
+  'discriminator-value-removed': { title: 'Discriminator value removed', severity: both('breaking', 'info') },
+
+  // Callbacks and webhooks are requests the server sends to the client, so their directions are swapped.
+  'callback-removed': { title: 'Callback removed', severity: 'warning' },
+  'callback-added': { title: 'Callback added', severity: 'info' },
+  'webhook-removed': { title: 'Webhook removed', severity: 'warning' },
+  'webhook-added': { title: 'Webhook added', severity: 'info' },
+  'callback-media-type-removed': { title: 'Callback or webhook media type removed', severity: 'breaking' },
 } satisfies Record<string, Rule>;
 
 export type RuleId = keyof typeof RULES;

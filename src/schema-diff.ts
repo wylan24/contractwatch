@@ -122,6 +122,23 @@ function walk(baseIn: Schema | undefined, headIn: Schema | undefined, pointer: s
     walk(base.items, head.items, [...pointer, 'items'], `${field || ''}[]`, ctx, seen, comp);
   }
 
+  // Discriminators: the property name and the values clients switch on.
+  const bd = base.discriminator;
+  const hd = head.discriminator;
+  if (typeof bd?.propertyName === 'string' && typeof hd?.propertyName === 'string') {
+    const dptr = [...pointer, 'discriminator'];
+    if (bd.propertyName !== hd.propertyName) {
+      emit('discriminator-property-changed', `${name} variants are now told apart by \`${hd.propertyName}\` instead of \`${bd.propertyName}\``, dptr);
+    } else if (bd.mapping && hd.mapping) {
+      const bk = Object.keys(bd.mapping);
+      const hk = Object.keys(hd.mapping);
+      const added = hk.filter((k) => !bk.includes(k));
+      const removed = bk.filter((k) => !hk.includes(k));
+      if (added.length) emit('discriminator-value-added', `${name} has new \`${hd.propertyName}\` value${added.length > 1 ? 's' : ''} ${list(added)}`, dptr);
+      if (removed.length) emit('discriminator-value-removed', `${name} no longer has \`${hd.propertyName}\` ${list(removed)}`, dptr);
+    }
+  }
+
   for (const kw of ['oneOf', 'anyOf'] as const) diffVariants(base[kw], head[kw], kw, pointer, field, ctx, seen, emit, comp);
 }
 

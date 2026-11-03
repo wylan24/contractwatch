@@ -202,3 +202,67 @@ describe('shared schemas', () => {
     assert.notEqual(changes[0].id, changes[1].id);
   });
 });
+
+describe('more of the spec', () => {
+  const ok = { description: '' };
+  const json = (schema: any) => ({ description: '', content: { 'application/json': { schema } } });
+  const d = (rest: any, paths: any = { '/x': { get: { responses: { '200': ok } } } }) => ({ openapi: '3.1.0', paths, ...rest });
+  const run = (b: any, h: any) => rules(diffSpecs(spec(b), spec(h)).changes);
+
+  test('servers: a removed URL warns, a new base path breaks', () => {
+    const s = (...urls: string[]) => d({ servers: urls.map((url) => ({ url })) });
+    assert.deepEqual(run(s('https://a.example.com/v1', 'https://b.example.com/v1'), s('https://a.example.com/v1')), ['server-removed:warning']);
+    assert.deepEqual(run(s('https://api.example.com/v1'), s('https://api.example.com/v2')), ['base-path-changed:breaking']);
+    // Server variables resolve to their defaults, so this is the same URL.
+    const v = d({ servers: [{ url: 'https://api.example.com/{version}', variables: { version: { default: 'v1' } } }] });
+    assert.deepEqual(run(s('https://api.example.com/v1'), v), []);
+  });
+
+  test('parameter serialization: explicit defaults are not a change, a new style is', () => {
+    const op = (p: any) => d({}, { '/x': { get: { parameters: [{ name: 'ids', in: 'query', schema: { type: 'array' }, ...p }], responses: { '200': ok } } } });
+    assert.deepEqual(run(op({}), op({ style: 'form', explode: true })), []);
+    assert.deepEqual(run(op({}), op({ explode: false })), ['parameter-serialization-changed:breaking']);
+  });
+
+  test('a code folded into a range is compared with the range', () => {
+    const op = (responses: any) => d({}, { '/x': { get: { responses } } });
+    const changes = run(op({ '200': ok, '404': json({ type: 'object', properties: { error: { type: 'string' } } }) }), op({ '200': ok, '4XX': json({ type: 'object', properties: {} }) }));
+    assert.deepEqual(changes, ['property-removed:breaking', 'response-now-covered:info']);
+  });
+
+  test('discriminator property and mapping values', () => {
+    const body = (disc: any) => d({}, { '/x': { get: { responses: { '200': json({ oneOf: [{ type: 'object' }], discriminator: disc }) } } } });
+    const map = (...keys: string[]) => Object.fromEntries(keys.map((k) => [k, `#/components/schemas/${k}`]));
+    assert.deepEqual(run(body({ propertyName: 'type' }), body({ propertyName: 'kind' })), ['discriminator-property-changed:breaking']);
+    assert.deepEqual(run(body({ propertyName: 'type', mapping: map('cat') }), body({ propertyName: 'type', mapping: map('cat', 'dog') })), ['discriminator-value-added:warning']);
+  });
+
+  test('webhooks: directions are swapped', () => {
+    const hook = (props: any, required: string[] = []) =>
+      d({ webhooks: { petAdopted: { post: { requestBody: { content: { 'application/json': { schema: { type: 'object', properties: props, required } } } }, responses: { '200': ok } } } } });
+    const base = hook({ id: { type: 'string' }, name: { type: 'string' } });
+    // Dropping a field from a payload the client receives breaks it, like a response.
+    assert.deepEqual(run(base, hook({ id: { type: 'string' } })), ['property-removed:breaking']);
+    // A new required field in it doesn't, like a response.
+    assert.deepEqual(run(base, hook({ id: { type: 'string' }, name: { type: 'string' }, at: { type: 'string' } }, ['at'])), ['required-property-added:info']);
+    assert.deepEqual(run(base, d({ webhooks: {} })), ['webhook-removed:warning']);
+    const [c] = diffSpecs(spec(base), spec(hook({ id: { type: 'string' } }))).changes;
+    assert.equal(c.operation, 'webhook petAdopted (POST)');
+  });
+
+  test('callbacks are reported under the operation that registers them', () => {
+    const op = (props: any) =>
+      d({}, {
+        '/subscribe': {
+          post: {
+            responses: { '201': ok },
+            callbacks: { onEvent: { '{$request.body#/url}': { post: { requestBody: { content: { 'application/json': { schema: { type: 'object', properties: props } } } }, responses: { '200': ok } } } } },
+          },
+        },
+      });
+    const changes = diffSpecs(spec(op({ event: { type: 'string' }, at: { type: 'string' } })), spec(op({ event: { type: 'string' } }))).changes;
+    assert.deepEqual(rules(changes), ['property-removed:breaking']);
+    assert.equal(changes[0].operation, 'POST /subscribe');
+    assert.match(changes[0].where ?? '', /callback onEvent \(POST\) request body/);
+  });
+});

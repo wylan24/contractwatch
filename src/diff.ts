@@ -1,6 +1,6 @@
+import { createHash } from 'node:crypto';
 import { type RuleId, severityOf } from './rules.ts';
 import { type ComponentNames, diffSchema } from './schema-diff.ts';
-import { createHash } from 'node:crypto';
 import type { Change, DiffResult, Direction, RawChange, Schema, Spec } from './types.ts';
 
 const METHODS = ['get', 'put', 'post', 'delete', 'patch', 'options', 'head', 'trace'] as const;
@@ -22,6 +22,8 @@ export function diffSpecs(base: Spec, head: Spec): DiffResult {
     out.push(change('spec-version-changed', `OpenAPI version changed from ${base.openapi} to ${head.openapi}`, ['openapi']));
   }
 
+  diffServers(base.doc.servers, head.doc.servers, out);
+
   const names: Names = { base: base.names ?? new Map(), head: head.names ?? new Map() };
   const b = indexOperations(base.doc);
   const h = indexOperations(head.doc);
@@ -39,6 +41,9 @@ export function diffSpecs(base: Spec, head: Spec): DiffResult {
     const label = `${ho.method} ${ho.path}`;
     out.push(change('operation-added', `${label} was added`, ['paths', ho.path, ho.method.toLowerCase()], label));
   }
+
+  // OpenAPI 3.1 webhooks: requests the API sends to its consumers, keyed by name.
+  diffServerSent('webhook', base.doc.webhooks, head.doc.webhooks, ['webhooks'], (name, method) => `webhook ${name} (${method})`, out, names);
 
   return { base: pick(base), head: pick(head), changes: out.map((c) => ({ id: changeId(c), ...c })), notes: [] };
 }
@@ -91,6 +96,95 @@ function diffOperation(baseDoc: any, headDoc: any, bo: Operation, ho: Operation,
   diffParameters(bo, ho, label, at, out, names);
   diffRequestBody(bo.op.requestBody, ho.op.requestBody, label, at, out, names);
   diffResponses(bo.op.responses ?? {}, ho.op.responses ?? {}, label, at, out, names);
+
+  // Callbacks: one path item per runtime expression, under each callback name.
+  const flat = (op: any) => {
+    const items: Record<string, any> = {};
+    for (const [name, cb] of Object.entries<any>(op.callbacks ?? {})) for (const [expr, item] of Object.entries<any>(cb ?? {})) items[`${name} ${expr}`] = item;
+    return items;
+  };
+  diffServerSent('callback', flat(bo.op), flat(ho.op), [...at, 'callbacks'], (key, method) => `callback ${key.split(' ')[0]} (${method})`, out, names, label);
+}
+
+/**
+ * Webhooks and callbacks are requests the server sends to the client. The client parses their bodies and
+ * writes their responses, so request bodies are compared like responses and the other way round.
+ */
+function diffServerSent(
+  kind: 'webhook' | 'callback',
+  b: Record<string, any> | undefined,
+  h: Record<string, any> | undefined,
+  at: string[],
+  describe: (key: string, method: string) => string,
+  out: RawChange[],
+  names: Names,
+  parent?: string,
+) {
+  const ops = (items: Record<string, any> | undefined) => {
+    const m = new Map<string, { key: string; method: string; op: any }>();
+    for (const [key, item] of Object.entries<any>(items ?? {})) {
+      if (!item || typeof item !== 'object') continue;
+      for (const method of METHODS) if (item[method]) m.set(`${key} ${method}`, { key, method: method.toUpperCase(), op: item[method] });
+    }
+    return m;
+  };
+  const bo = ops(b);
+  const ho = ops(h);
+  const ptr = (o: { key: string; method: string }) => (kind === 'webhook' ? [...at, o.key, o.method.toLowerCase()] : [...at, o.key.split(' ')[0]]);
+  for (const [k, o] of bo) {
+    if (ho.has(k)) continue;
+    out.push(change(`${kind}-removed`, `${describe(o.key, o.method)} is no longer sent`, at, parent ?? describe(o.key, o.method)));
+  }
+  for (const [k, o] of ho) {
+    const label = parent ?? describe(o.key, o.method);
+    const old = bo.get(k);
+    if (!old) {
+      out.push(change(`${kind}-added`, `${describe(o.key, o.method)} was added`, ptr(o), label));
+      continue;
+    }
+    const where = describe(o.key, o.method);
+    const p = ptr(o);
+    const compare = (bc: any, hc: any, direction: Direction, place: string, cptr: string[]) => {
+      const bm = contentOf(bc);
+      const hm = contentOf(hc);
+      for (const [mk, m] of bm) if (!hm.has(mk)) out.push(change('callback-media-type-removed', `${place} no longer uses ${m.type}`, cptr, label, direction, where));
+      for (const [mk, m] of hm) {
+        const prev = bm.get(mk);
+        if (prev) diffSchema(prev.schema, m.schema, [...cptr, 'content', m.type, 'schema'], { operation: label, direction, label: `${where} ${place}`, out, names });
+      }
+    };
+    compare(old.op.requestBody, o.op.requestBody, 'response', 'request body', [...p, 'requestBody']);
+    for (const [code, res] of Object.entries<any>(o.op.responses ?? {})) {
+      const prev = old.op.responses?.[code];
+      if (prev) compare(prev, res, 'request', `response ${code}`, [...p, 'responses', code]);
+    }
+  }
+}
+
+/**
+ * Server URLs. Losing one is a warning (clients may be configured with it); when no base path survives,
+ * every request URL changes, which breaks everyone.
+ */
+function diffServers(b: unknown, h: unknown, out: RawChange[]) {
+  const urls = (s: unknown) => (Array.isArray(s) ? s.filter((x) => typeof x?.url === 'string') : []);
+  const resolve = (srv: any): string => srv.url.replace(/\{([^}]+)\}/g, (_: string, v: string) => String(srv.variables?.[v]?.default ?? `{${v}}`));
+  const pathOf = (url: string) => {
+    try {
+      return new URL(url, 'http://relative.invalid').pathname.replace(/\/+$/, '') || '/';
+    } catch {
+      return url;
+    }
+  };
+  const bu = urls(b).map(resolve);
+  const hu = urls(h).map(resolve);
+  if (!bu.length || !hu.length) return;
+  const hp = new Set(hu.map(pathOf));
+  if (!bu.map(pathOf).some((p) => hp.has(p))) {
+    out.push(change('base-path-changed', `the base path changed from ${[...new Set(bu.map(pathOf))].join(', ')} to ${[...hp].join(', ')}`, ['servers']));
+    return;
+  }
+  for (const u of bu) if (!hu.includes(u)) out.push(change('server-removed', `server ${u} was removed`, ['servers']));
+  for (const u of hu) if (!bu.includes(u)) out.push(change('server-added', `server ${u} was added`, ['servers']));
 }
 
 /**
@@ -111,6 +205,8 @@ interface Param {
   required: boolean;
   deprecated: boolean;
   schema?: Schema;
+  /** Effective serialization with the spec's defaults filled in: `form/explode`, `simple`… */
+  serialization: string;
   /** Index among the operation's parameters as written, for pointers. */
   index: number;
   /** Whether it was declared on the path item rather than the operation. */
@@ -131,7 +227,10 @@ function parametersOf(o: Operation): Map<string, Param> {
       const pos = pathOrder.indexOf(p.name);
       const key = p.in === 'path' && pos !== -1 ? `path:#${pos}` : `${p.in}:${p.in === 'header' ? p.name.toLowerCase() : p.name}`;
       const schema = p.schema ?? (Object.values<any>(p.content ?? {})[0]?.schema as Schema | undefined);
-      byKey.set(key, { name: p.name, in: p.in, required: p.in === 'path' || !!p.required, deprecated: !!p.deprecated, schema, index, pathLevel });
+      const style = p.style ?? (p.in === 'query' || p.in === 'cookie' ? 'form' : 'simple');
+      const explode = p.explode ?? style === 'form';
+      const serialization = `${style}${explode ? '/explode' : ''}`;
+      byKey.set(key, { name: p.name, in: p.in, required: p.in === 'path' || !!p.required, deprecated: !!p.deprecated, schema, serialization, index, pathLevel });
     });
   }
   return byKey;
@@ -158,6 +257,8 @@ function diffParameters(bo: Operation, ho: Operation, label: string, at: string[
     if (!old.required && p.required) push('parameter-became-required', `${desc(p)} is now required`, ptr(p), desc(p));
     if (old.required && !p.required) push('parameter-became-optional', `${desc(p)} is now optional`, ptr(p), desc(p));
     if (!old.deprecated && p.deprecated) push('parameter-deprecated', `${desc(p)} is deprecated`, ptr(p), desc(p));
+    // Only arrays and objects serialize differently, but for those the URL changes.
+    if (old.serialization !== p.serialization) push('parameter-serialization-changed', `${desc(p)} is now serialized as ${p.serialization} (was ${old.serialization})`, ptr(p), desc(p));
     diffSchema(old.schema, p.schema, [...ptr(p), 'schema'], { operation: label, direction: 'request', label: desc(p), out, names });
   }
 }
@@ -198,8 +299,16 @@ function diffResponses(b: Record<string, any>, h: Record<string, any>, label: st
   const push = (rule: RuleId, message: string, pointer: string[], where: string) => out.push(change(rule, message, pointer, label, 'response', where));
   const success = (code: string) => /^[23]/.test(code);
 
+  // `404` removed while `4XX` (or `default`) is added: that code still has a documented response.
+  const coverOf = (code: string) => [`${code[0]}XX`, `${code[0]}xx`, 'default'].find((c) => c !== code && c in h && !(c in b));
   for (const code of Object.keys(b)) {
     if (code in h) continue;
+    const cover = coverOf(code);
+    if (cover) {
+      push('response-now-covered', `the ${code} response is now covered by ${cover}`, [...ptr, cover], `response ${code}`);
+      diffResponse(code, b[code], h[cover], [...ptr, cover], label, out, names);
+      continue;
+    }
     if (success(code)) push('success-response-removed', `the ${code} response was removed`, ptr, `response ${code}`);
     else push('error-response-removed', `the ${code} response was removed`, ptr, `response ${code}`);
   }
@@ -208,36 +317,43 @@ function diffResponses(b: Record<string, any>, h: Record<string, any>, label: st
     const rptr = [...ptr, code];
     const where = `response ${code}`;
     if (!br) {
-      push('response-added', `new ${code} response`, rptr, where);
+      // A range or default that replaces removed codes was reported above.
+      if (!Object.keys(b).some((c) => !(c in h) && coverOf(c) === code)) push('response-added', `new ${code} response`, rptr, where);
       continue;
     }
+    diffResponse(code, br, hr, rptr, label, out, names);
+  }
+}
 
-    const bc = contentOf(br);
-    const hc = contentOf(hr);
-    for (const [k, m] of bc) if (!hc.has(k)) push('response-media-type-removed', `the ${code} response no longer returns ${m.type}`, [...rptr, 'content'], where);
-    for (const [k, m] of hc) {
-      const old = bc.get(k);
-      if (!old) {
-        push('response-media-type-added', `the ${code} response can now also return ${m.type}`, [...rptr, 'content', m.type], where);
-        continue;
-      }
-      const label2 = `${where} body${bc.size > 1 ? ` (${m.type})` : ''}`;
-      diffSchema(old.schema, m.schema, [...rptr, 'content', m.type, 'schema'], { operation: label, direction: 'response', label: label2, out, names });
+/** Media types, bodies and headers of one response. */
+function diffResponse(code: string, br: any, hr: any, rptr: string[], label: string, out: RawChange[], names: Names) {
+  const where = `response ${code}`;
+  const push = (rule: RuleId, message: string, pointer: string[]) => out.push(change(rule, message, pointer, label, 'response', where));
+  const bc = contentOf(br);
+  const hc = contentOf(hr);
+  for (const [k, m] of bc) if (!hc.has(k)) push('response-media-type-removed', `the ${code} response no longer returns ${m.type}`, [...rptr, 'content']);
+  for (const [k, m] of hc) {
+    const old = bc.get(k);
+    if (!old) {
+      push('response-media-type-added', `the ${code} response can now also return ${m.type}`, [...rptr, 'content', m.type]);
+      continue;
     }
+    const label2 = `${where} body${bc.size > 1 ? ` (${m.type})` : ''}`;
+    diffSchema(old.schema, m.schema, [...rptr, 'content', m.type, 'schema'], { operation: label, direction: 'response', label: label2, out, names });
+  }
 
-    const bh = headersOf(br);
-    const hh = headersOf(hr);
-    for (const [k, hd] of bh) {
-      if (hh.has(k)) continue;
-      const rule = hd.def?.required ? 'required-response-header-removed' : 'response-header-removed';
-      push(rule, `the ${code} response no longer sends header \`${hd.name}\``, [...rptr, 'headers'], where);
-    }
-    for (const [k, hd] of hh) {
-      const old = bh.get(k);
-      const hptr = [...rptr, 'headers', hd.name];
-      if (!old) push('response-header-added', `the ${code} response now sends header \`${hd.name}\``, hptr, where);
-      else diffSchema(old.def?.schema, hd.def?.schema, [...hptr, 'schema'], { operation: label, direction: 'response', label: `${where} header \`${hd.name}\``, out, names });
-    }
+  const bh = headersOf(br);
+  const hh = headersOf(hr);
+  for (const [k, hd] of bh) {
+    if (hh.has(k)) continue;
+    const rule = hd.def?.required ? 'required-response-header-removed' : 'response-header-removed';
+    push(rule, `the ${code} response no longer sends header \`${hd.name}\``, [...rptr, 'headers']);
+  }
+  for (const [k, hd] of hh) {
+    const old = bh.get(k);
+    const hptr = [...rptr, 'headers', hd.name];
+    if (!old) push('response-header-added', `the ${code} response now sends header \`${hd.name}\``, hptr);
+    else diffSchema(old.def?.schema, hd.def?.schema, [...hptr, 'schema'], { operation: label, direction: 'response', label: `${where} header \`${hd.name}\``, out, names });
   }
 }
 
