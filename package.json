@@ -1,6 +1,6 @@
 {
   "name": "@wylan24/contractwatch",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Catch breaking changes in OpenAPI specs before they ship: removed fields, changed types, new required parameters. Runs on pull requests.",
   "type": "module",
   "bin": {
