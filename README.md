@@ -1,5 +1,9 @@
 # contractwatch
 
+[![npm](https://img.shields.io/npm/v/@wylan24/contractwatch)](https://www.npmjs.com/package/@wylan24/contractwatch)
+[![CI](https://github.com/wylan24/contractwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/wylan24/contractwatch/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/@wylan24/contractwatch)](LICENSE)
+
 Catch breaking API changes before they ship. contractwatch compares two versions of an OpenAPI spec and tells
 you which changes will break existing clients: removed fields, changed types, new required parameters. It runs
 on pull requests and leaves one comment saying what will break and why.
@@ -7,21 +11,20 @@ on pull requests and leaves one comment saying what will break and why.
 It also checks a spec against reality: give it recorded traffic and it reports where the API's real responses
 don't match what the spec promises.
 
-> Status: early alpha, private. See [PLAN.md](PLAN.md) for the roadmap.
+> Status: early alpha. Rule ids and report formats may still change. See [PLAN.md](PLAN.md) for the roadmap.
 
 ## Quick start
 
 You need [Node.js](https://nodejs.org) 22.18 or newer.
 
 ```bash
-npm install
-node src/cli.ts diff old.yaml new.yaml
+npx @wylan24/contractwatch diff old.yaml new.yaml
 ```
 
 Or compare your working copy with another branch:
 
 ```bash
-node src/cli.ts diff api/openapi.yaml --base origin/main
+npx @wylan24/contractwatch diff api/openapi.yaml --base origin/main
 ```
 
 ```
@@ -60,7 +63,7 @@ report has a short id (`[operation-removed 3fa2c1d0]` in the terminal, the **Id*
 Record the ones you mean:
 
 ```bash
-node src/cli.ts accept 90bd04bb --reason "DELETE /pets moved to /v2, clients notified" --expires 2027-01-31
+npx @wylan24/contractwatch accept 90bd04bb --reason "DELETE /pets moved to /v2, clients notified" --expires 2027-01-31
 ```
 
 That adds them to `.contractwatch.json` at the repository root (creating it if needed):
@@ -102,7 +105,7 @@ A spec can be correct on paper and still not describe the API that's running. `v
 against the spec:
 
 ```bash
-node src/cli.ts verify api/openapi.yaml --har staging.har
+npx @wylan24/contractwatch verify api/openapi.yaml --har staging.har
 ```
 
 ```
@@ -211,8 +214,6 @@ Several specs? List them, one per line, or use a glob. Each gets its own comment
 Outputs: `exit-code` (0/1/2), `breaking` (count across specs, not counting accepted ones) and `report-dir`
 (one folder per spec with `report.json`, `report.md` and `report.sarif`).
 
-> While the repository is private, other repositories can only use the Action after you allow it under
-> **Settings → Actions → General → Access**.
 
 ## Rules
 
@@ -287,7 +288,9 @@ Outputs: `exit-code` (0/1/2), `breaking` (count across specs, not counting accep
 ## Development
 
 ```bash
-npm test          # node --test, runs the TypeScript sources directly
+npm install
+node src/cli.ts --help   # Node 22.18+ runs the TypeScript sources directly
+npm test          # node --test
 npm run typecheck
 npm run build     # dist/ for the npm package
 ```

@@ -27,7 +27,16 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: node dist/cli.js --version
+      - name: Package smoke test (install the tarball like a user would)
+        run: |
+          npm pack --pack-destination "$RUNNER_TEMP"
+          mkdir "$RUNNER_TEMP/smoke" && cd "$RUNNER_TEMP/smoke"
+          npm init -y > /dev/null
+          npm install "$RUNNER_TEMP"/wylan24-contractwatch-*.tgz --no-audit --no-fund
+          npx contractwatch --version
+          npx contractwatch diff "$GITHUB_WORKSPACE/test/fixtures/petstore-base.yaml" "$GITHUB_WORKSPACE/test/fixtures/petstore-head.yaml" --fail-on never
+          npx contractwatch verify "$GITHUB_WORKSPACE/test/fixtures/petstore-base.yaml" --har "$GITHUB_WORKSPACE/test/fixtures/traffic.har" --fail-on never
+          test -f node_modules/@wylan24/contractwatch/schema/contractwatch.schema.json
 
   action:
     # exercises action.yml exactly as a user's workflow would, comparing the working tree with HEAD
